@@ -301,6 +301,8 @@ pub(super) fn resolve_project_directory(
 
 impl Workspace {
     pub(super) fn right_tool_collapsed_for_window(&self, app: &AppContext) -> bool {
+        use twarpui::zoom::Scale as _;
+
         let Some(bounds) = app.window_bounds(&self.window_id) else {
             return false;
         };
@@ -334,7 +336,11 @@ impl Workspace {
                 })
                 .unwrap_or(DEFAULT_CODE_REVIEW_TOOL_WIDTH),
         };
-        should_responsively_collapse_right_tool(bounds.width(), projects_width, tool_width)
+        should_responsively_collapse_right_tool(
+            bounds.width().scale_down(app.zoom_factor()),
+            projects_width,
+            tool_width,
+        )
     }
 
     fn project_roots(&self, project_id: EntityId, app: &AppContext) -> Vec<PathBuf> {

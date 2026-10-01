@@ -23,4 +23,5 @@ serde.workspace = true
 warp_multi_agent_api.workspace = true
 
 [dev-dependencies]
+diesel = { workspace = true, features = ["sqlite"] }
 serde_json.workspace = true

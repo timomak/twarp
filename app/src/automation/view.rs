@@ -35,6 +35,7 @@ pub struct AutomationView {
     scheduled_state: Option<ScheduledTasksPageState>,
     /// Present iff `page == AutomationPage::PullRequests` (twarp 21a).
     pull_requests_state: Option<PullRequestsPageState>,
+    pull_requests_store: Option<ModelHandle<crate::pull_requests::PullRequestsStoreModel>>,
 }
 
 impl AutomationView {
@@ -71,19 +72,20 @@ impl AutomationView {
             Self::schedule_relative_time_tick(ctx);
             ScheduledTasksPageState::new(ctx)
         });
-        let pull_requests_state = (page == AutomationPage::PullRequests).then(|| {
+        let pull_requests_store = (page == AutomationPage::PullRequests)
+            .then(|| ctx.add_model(crate::pull_requests::PullRequestsStoreModel::new));
+        let pull_requests_state = pull_requests_store.as_ref().map(|store| {
             // PR lists arrive asynchronously (background `gh` fetches);
             // resync the header controls and re-render when the store
             // notifies.
-            let store = crate::pull_requests::PullRequestsStoreModel::handle(ctx);
-            ctx.observe(&store, |view: &mut Self, _, ctx| {
+            ctx.observe(store, |view: &mut Self, _, ctx| {
                 if let Some(mut state) = view.pull_requests_state.take() {
                     state.sync(ctx);
                     view.pull_requests_state = Some(state);
                 }
                 ctx.notify();
             });
-            PullRequestsPageState::new(ctx)
+            PullRequestsPageState::new(store.clone(), ctx)
         });
         Self {
             page,
@@ -92,6 +94,7 @@ impl AutomationView {
             plugins_state,
             scheduled_state,
             pull_requests_state,
+            pull_requests_store,
         }
     }
 
@@ -109,6 +112,12 @@ impl AutomationView {
                 }
             },
         );
+    }
+
+    pub fn pull_requests_store(
+        &self,
+    ) -> Option<ModelHandle<crate::pull_requests::PullRequestsStoreModel>> {
+        self.pull_requests_store.clone()
     }
 
     pub fn page(&self) -> AutomationPage {

@@ -23,7 +23,8 @@ impl GlobalSearch {
         _root: Vec<PathBuf>,
         _search_config: SearchConfig,
         _ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> Option<u32> {
+        None
     }
 }
 

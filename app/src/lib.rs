@@ -1778,10 +1778,6 @@ fn initialize_app(
         crate::skills_store::SkillsStoreModel::new(migrated_skills, ctx)
     });
 
-    // twarp 21a: the per-repo GitHub pull-request cache backing the Pull
-    // Requests page; fetches run `gh` on the background executor.
-    ctx.add_singleton_model(|ctx| crate::pull_requests::PullRequestsStoreModel::new(ctx));
-
     // twarp 20d: the scheduled-tasks scheduler — owns the task list + run
     // history and ticks on the background executor; fires are handled by the
     // workspace (see `WorkspaceView::handle_scheduler_fires`).

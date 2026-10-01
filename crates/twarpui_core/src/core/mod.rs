@@ -5,6 +5,7 @@ mod entity;
 mod model;
 mod view;
 mod window;
+mod window_bounds;
 
 pub use action::*;
 pub use app::*;

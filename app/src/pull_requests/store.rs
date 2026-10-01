@@ -1,4 +1,4 @@
-//! twarp 21a: the Pull Requests store — a singleton model holding a per-repo
+//! The Pull Requests store is owned by one window's PR page and holds a per-repo
 //! cache of GitHub pull requests fetched with the `gh` CLI. All subprocess
 //! work runs on the background executor (mirroring
 //! [`crate::skills_store::SkillsStoreModel`]); results stream back over a
@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use twarpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext};
 
 use crate::code_review::github_author::parse_github_origin;
 use crate::pull_requests::diff::{parse_pr_diff, parse_review_threads, PrFileDiff, PrReviewThread};
@@ -196,6 +196,7 @@ pub struct PrEntry {
 /// Cached fetch state for one repo.
 #[derive(Clone, Debug, Default)]
 pub struct RepoPrData {
+    pub directory_unavailable: bool,
     pub prs: Vec<PrEntry>,
     pub error: Option<String>,
     pub loading: bool,
@@ -429,13 +430,20 @@ struct FetchResult {
     /// `Some` when this fetch also resolved the viewer login.
     viewer: Option<String>,
     outcome: Result<Vec<PrEntry>, String>,
+    directory_unavailable: bool,
 }
 
-/// Singleton owning the PR cache, the project list shown in the page's repo
-/// picker, and the current selection/filter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PullRequestsEvent {
+    SelectionChanged(Option<PathBuf>),
+}
+
+/// Page-owned PR cache, repository candidates, and selection/filter state.
+/// One PR page per window keeps navigation independent across windows.
 pub struct PullRequestsStoreModel {
     projects: Vec<PathBuf>,
     selected: Option<PathBuf>,
+    explicit_selection: bool,
     filter: PrStateFilter,
     /// Author login the list is narrowed to (`None` = all authors). Applied
     /// client-side over the fetched list, so it composes with the state
@@ -477,6 +485,7 @@ impl PullRequestsStoreModel {
         Self {
             projects: Vec::new(),
             selected: None,
+            explicit_selection: false,
             filter: PrStateFilter::default(),
             author_filter: None,
             viewer: None,
@@ -496,6 +505,10 @@ impl PullRequestsStoreModel {
 
     pub fn selected_repo(&self) -> Option<&Path> {
         self.selected.as_deref()
+    }
+
+    pub fn has_explicit_selection(&self) -> bool {
+        self.explicit_selection
     }
 
     pub fn filter(&self) -> PrStateFilter {
@@ -532,37 +545,72 @@ impl PullRequestsStoreModel {
         self.data.get(self.selected.as_ref()?)
     }
 
-    /// Called by the workspace when the page opens: the known project roots
-    /// plus the preferred default (the active tab's repo). Always kicks off a
-    /// refresh of the selection so the page opens with fresh data.
+    /// Reconcile repository context from the workspace, including after restore
+    /// and asynchronous repository discovery. A missing preferred selection keeps
+    /// the current picker choice while it remains available.
     pub fn set_projects(
         &mut self,
         projects: Vec<PathBuf>,
-        default: Option<PathBuf>,
+        preferred: Option<PathBuf>,
+        refresh: bool,
         ctx: &mut ModelContext<Self>,
     ) {
+        let projects_changed = self.projects != projects;
         self.projects = projects;
-        let keep = |sel: &PathBuf, list: &[PathBuf]| list.contains(sel);
-        let selected = default
-            .filter(|d| keep(d, &self.projects))
-            .or_else(|| self.selected.clone().filter(|s| keep(s, &self.projects)))
-            .or_else(|| self.projects.first().cloned());
+        let current = self
+            .selected
+            .clone()
+            .filter(|path| self.projects.contains(path));
+        let preferred = preferred.filter(|path| self.projects.contains(path));
+        let selected = if self.explicit_selection {
+            current.clone().or(preferred.clone())
+        } else {
+            preferred.clone().or(current.clone())
+        }
+        .or_else(|| (self.projects.len() == 1).then(|| self.projects[0].clone()));
+        // A preferred replacement can redirect the explicit choice after a
+        // machine-local folder relocation. An unrelated fallback is automatic.
+        self.explicit_selection &= selected.is_some() && (current.is_some() || preferred.is_some());
+        let selection_changed = self.replace_selection(selected, ctx);
+        if selection_changed || refresh {
+            self.refresh(ctx);
+        } else if projects_changed {
+            ctx.notify();
+        }
+    }
+
+    fn replace_selection(
+        &mut self,
+        selected: Option<PathBuf>,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if self.selected == selected {
+            return false;
+        }
         self.selected = selected;
-        self.refresh(ctx);
+        self.author_filter = None;
+        self.close_detail(ctx);
+        ctx.emit(PullRequestsEvent::SelectionChanged(self.selected.clone()));
+        true
     }
 
     pub fn select_repo(&mut self, repo: PathBuf, ctx: &mut ModelContext<Self>) {
-        if self.selected.as_ref() == Some(&repo) {
+        // Ignore an action from a picker that was superseded by rediscovery.
+        if !self.projects.contains(&repo) {
             return;
         }
-        self.selected = Some(repo);
-        // Author sets differ per repo; a carried-over filter would silently
-        // show an empty list.
-        self.author_filter = None;
+        let was_explicit = self.explicit_selection;
+        self.explicit_selection = true;
+        if !self.replace_selection(Some(repo), ctx) {
+            if !was_explicit {
+                ctx.notify();
+            }
+            return;
+        }
         self.refresh(ctx);
     }
 
-    /// Set the author narrowing (`None` = all). Client-side only — no refetch.
+    /// Set the author narrowing (`None` = all). Client-side only.
     pub fn set_author_filter(&mut self, author: Option<String>, ctx: &mut ModelContext<Self>) {
         if self.author_filter == author {
             return;
@@ -584,11 +632,12 @@ impl PullRequestsStoreModel {
     /// is already in flight supersedes it: the generation bump makes the older
     /// result stale, and [`Self::apply_fetch`] drops it on arrival.
     pub fn refresh(&mut self, ctx: &mut ModelContext<Self>) {
+        // Clearing context must invalidate any result already in flight too.
+        self.generation += 1;
         let Some(repo) = self.selected.clone() else {
             ctx.notify();
             return;
         };
-        self.generation += 1;
         let generation = self.generation;
         self.data.entry(repo.clone()).or_default().loading = true;
         ctx.notify();
@@ -599,14 +648,22 @@ impl PullRequestsStoreModel {
         let tx = self.fetch_tx.clone();
         ctx.background_executor()
             .spawn(async move {
-                let viewer = need_viewer.then(|| fetch_viewer_login(&repo)).flatten();
-                let outcome = fetch_pr_list(&repo, filter);
+                let directory_error = validate_repo_directory(&repo).err();
+                let directory_unavailable = directory_error.is_some();
+                let viewer = (need_viewer && !directory_unavailable)
+                    .then(|| fetch_viewer_login(&repo))
+                    .flatten();
+                let outcome = match directory_error {
+                    Some(error) => Err(error),
+                    None => fetch_pr_list(&repo, filter),
+                };
                 let _ = tx
                     .send(FetchResult {
                         repo,
                         generation,
                         viewer,
                         outcome,
+                        directory_unavailable,
                     })
                     .await;
             })
@@ -629,6 +686,7 @@ impl PullRequestsStoreModel {
         let entry = self.data.entry(result.repo).or_default();
         entry.loading = false;
         entry.fetched = true;
+        entry.directory_unavailable = result.directory_unavailable;
         match result.outcome {
             Ok(prs) => {
                 entry.prs = prs;
@@ -1063,36 +1121,73 @@ impl PullRequestsStoreModel {
 }
 
 impl Entity for PullRequestsStoreModel {
-    type Event = ();
+    type Event = PullRequestsEvent;
 }
-
-impl SingletonEntity for PullRequestsStoreModel {}
 
 /// When the app is launched from Finder, PATH is the minimal launchd default
 /// and misses the Homebrew bin dirs where `gh` is typically installed.
 fn path_with_homebrew() -> String {
-    let mut path = String::from("/opt/homebrew/bin:/usr/local/bin:");
-    if let Ok(existing) = std::env::var("PATH") {
-        path.push_str(&existing);
+    #[cfg(feature = "integration_tests")]
+    {
+        // Integration fixtures supply an offline gh stub through their isolated
+        // PATH. Never bypass it for an installed, authenticated Homebrew binary.
+        std::env::var("PATH").unwrap_or_default()
     }
-    path
+    #[cfg(not(feature = "integration_tests"))]
+    {
+        let mut path = String::from("/opt/homebrew/bin:/usr/local/bin:");
+        if let Ok(existing) = std::env::var("PATH") {
+            path.push_str(&existing);
+        }
+        path
+    }
+}
+
+fn validate_repo_directory(repo: &Path) -> Result<(), String> {
+    let metadata = std::fs::metadata(repo).map_err(|error| {
+        format!(
+            "Project folder {} is unavailable: {error}. Locate the folder or retry.",
+            repo.display()
+        )
+    })?;
+    if !metadata.is_dir() {
+        return Err(format!(
+            "Project folder {} is not a directory. Locate the folder or retry.",
+            repo.display()
+        ));
+    }
+    std::fs::read_dir(repo).map_err(|error| {
+        format!(
+            "Project folder {} is unreadable: {error}. Locate the folder or retry.",
+            repo.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn command_start_error(repo: &Path, program: &str, error: std::io::Error) -> String {
+    // A folder can disappear after validation. ENOENT then describes cwd,
+    // even when the executable is installed and on PATH.
+    if let Err(directory_error) = validate_repo_directory(repo) {
+        return directory_error;
+    }
+    if error.kind() == std::io::ErrorKind::NotFound {
+        format!("`{program}` was not found on your PATH.")
+    } else {
+        format!("failed to run `{program}`: {error}")
+    }
 }
 
 /// Run a command in `cwd`, returning trimmed stdout on success and a
 /// human-readable error otherwise. Blocking — background executor only.
 fn run_in_repo(repo: &Path, program: &str, args: &[&str]) -> Result<String, String> {
+    validate_repo_directory(repo)?;
     let output = std::process::Command::new(program)
         .args(args)
         .env("PATH", path_with_homebrew())
         .current_dir(repo)
         .output()
-        .map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                format!("`{program}` was not found on your PATH.")
-            } else {
-                format!("failed to run `{program}`: {err}")
-            }
-        })?;
+        .map_err(|err| command_start_error(repo, program, err))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
@@ -1114,6 +1209,7 @@ fn run_in_repo_with_stdin(
     stdin: &str,
 ) -> Result<String, String> {
     use std::io::Write;
+    validate_repo_directory(repo)?;
     let mut child = std::process::Command::new(program)
         .args(args)
         .env("PATH", path_with_homebrew())
@@ -1122,13 +1218,7 @@ fn run_in_repo_with_stdin(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                format!("`{program}` was not found on your PATH.")
-            } else {
-                format!("failed to run `{program}`: {err}")
-            }
-        })?;
+        .map_err(|err| command_start_error(repo, program, err))?;
     if let Some(mut pipe) = child.stdin.take() {
         pipe.write_all(stdin.as_bytes())
             .map_err(|err| format!("failed to write to `{program}`: {err}"))?;
@@ -1994,3 +2084,7 @@ mod tests {
         assert_eq!(PrStateFilter::All.gh_state(), "all");
     }
 }
+
+#[cfg(test)]
+#[path = "store_context_tests.rs"]
+mod context_tests;

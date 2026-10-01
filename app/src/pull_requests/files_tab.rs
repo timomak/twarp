@@ -23,7 +23,7 @@ use twarpui::{
     prelude::ColorU,
     text_layout::ClipConfig,
     units::Pixels,
-    AppContext, SingletonEntity, ViewContext, ViewHandle,
+    AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
@@ -67,8 +67,8 @@ fn action(action: PullRequestsPageAction) -> AutomationViewAction {
 /// UI state for the Files tab: expansion overrides, thread anchors, and the
 /// per-comment markdown editors (built in [`Self::sync`], render passes only
 /// get `&AppContext`).
-#[derive(Default)]
 pub struct FilesTabState {
+    store: ModelHandle<PullRequestsStoreModel>,
     /// Fingerprint of the files data the derived state was built from.
     files_rev: Option<u64>,
     /// Index-aligned default expansion (first files expand unless big).
@@ -100,11 +100,31 @@ pub struct FilesTabState {
 }
 
 impl FilesTabState {
+    pub fn new(store: ModelHandle<PullRequestsStoreModel>) -> Self {
+        Self {
+            store,
+            files_rev: None,
+            default_expanded: Default::default(),
+            expanded_overrides: Default::default(),
+            thread_expanded: Default::default(),
+            floating_expanded: Default::default(),
+            anchors: Default::default(),
+            comment_editors: Default::default(),
+            file_states: Default::default(),
+            misc_states: Default::default(),
+            drafts: Default::default(),
+            draft_editor: None,
+            reply_editors: Default::default(),
+            thread_op: None,
+            thread_error: None,
+        }
+    }
+
     /// Rebuild the derived state (anchors, default expansion, comment
     /// editors) when the store's files data changed.
     pub fn sync(&mut self, number: u64, ctx: &mut ViewContext<AutomationView>) {
         let (fingerprint, files, threads) = {
-            let store = PullRequestsStoreModel::as_ref(ctx);
+            let store = self.store.as_ref(ctx);
             let Some(data) = store.detail_data(number) else {
                 return;
             };
@@ -222,7 +242,7 @@ impl FilesTabState {
         let Some(thread_id) = self.thread_id(number, thread_idx, ctx) else {
             return;
         };
-        let started = PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+        let started = self.store.update(ctx, |store, ctx| {
             store.reply_thread(number, thread_id, body, ctx)
         });
         if started {
@@ -242,7 +262,7 @@ impl FilesTabState {
         let Some(thread_id) = self.thread_id(number, thread_idx, ctx) else {
             return;
         };
-        let started = PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+        let started = self.store.update(ctx, |store, ctx| {
             store.set_thread_resolved(number, thread_id, resolved, ctx)
         });
         if started {
@@ -257,7 +277,7 @@ impl FilesTabState {
         thread_idx: usize,
         ctx: &ViewContext<AutomationView>,
     ) -> Option<String> {
-        let store = PullRequestsStoreModel::as_ref(ctx);
+        let store = self.store.as_ref(ctx);
         let id = &store.detail_data(number)?.files.threads.get(thread_idx)?.id;
         (!id.is_empty()).then(|| id.clone())
     }
@@ -295,7 +315,7 @@ impl FilesTabState {
             return;
         }
         let coords = {
-            let store = PullRequestsStoreModel::as_ref(ctx);
+            let store = self.store.as_ref(ctx);
             store.detail_data(number).and_then(|data| {
                 let file = data.files.files.get(position.0)?;
                 let line = file.hunks.get(position.1)?.lines.get(position.2)?;

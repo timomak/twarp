@@ -43,6 +43,14 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ## Behavior
 
+### Project context and responsiveness (2026-10-01)
+
+- Pull Requests uses the window's explicit repository-picker selection first, then an assigned project, then the focused local session's discovered repository. Rootless restored chats are valid sources. Several roots without a focused choice require a picker selection. A missing assigned folder remains an error instead of selecting another repository.
+- Files, Search, and Code Review follow the selected PR repository's existing local checkout. Selecting a PR does not check out its branch. Global Settings, Plugins, and Scheduled Tasks pages retain the last project and visibly identify the folder used by their tools. Returning to a session restores that session's context. Windows have independent PR choices.
+- Missing or unreadable folders show a reason, Retry, and Locate folder. The user explicitly chooses the replacement. Store that replacement locally without renaming the project, moving chats, changing chat identity/history, or changing a running process's cwd. Future or resumed agent processes use the replacement. No basename matching or automatic cross-machine mapping.
+- Resizing with Files open uses current window dimensions, including zoom, and remains responsive with a populated tree. Closing and reopening retains a bounded cache of recent trees. Directory reads and expanded-folder loading run off the UI thread. Rapid animation reversals cancel superseded callbacks.
+- Validate restore, delayed repository discovery, no repository, ambiguous roots, missing folders, cancellation, replacement persistence, multiple windows, remote sessions, repeated toggles, and large expanded trees during window resize. Performance claims require a populated-tree before/after measurement.
+
 ### Shell structure and space
 
 1. On supported desktop macOS builds, the default shell has three horizontal regions: a left Projects sidebar, the center workspace, and a narrow right activity strip. When a right-side tool is open, its content rail appears between the center workspace and the activity strip.

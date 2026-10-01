@@ -1173,6 +1173,14 @@ impl PaneGroup {
             .collect()
     }
 
+    pub(crate) fn pull_requests_store(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<ModelHandle<crate::pull_requests::PullRequestsStoreModel>> {
+        self.panes_of::<AutomationPane>()
+            .find_map(|pane| pane.automation_view(ctx).as_ref(ctx).pull_requests_store())
+    }
+
     pub fn active_file_model(&self) -> &ModelHandle<ActiveFileModel> {
         &self.active_file_model
     }
@@ -1911,13 +1919,24 @@ impl PaneGroup {
                 };
                 let cwd = snapshot.cwd.map(PathBuf::from);
                 let jsonl_path = match snapshot.provider {
-                    claude_code::driver::AgentProvider::Claude => cwd
-                        .clone()
-                        .or_else(|| std::env::current_dir().ok())
-                        .and_then(|dir| claude_code::sessions::session_file(&dir, &session_id))
+                    claude_code::driver::AgentProvider::Claude => {
+                        crate::claude_code_view::ClaudeCodeView::resolve_claude_history_path(
+                            cwd.as_deref(),
+                            &session_id,
+                            snapshot.history_path.as_deref().map(std::path::Path::new),
+                            ctx,
+                        )
+                        .or_else(|| {
+                            cwd.clone()
+                                .or_else(|| std::env::current_dir().ok())
+                                .and_then(|dir| {
+                                    claude_code::sessions::session_file(&dir, &session_id)
+                                })
+                        })
                         .ok_or_else(|| {
                             anyhow::anyhow!("Cannot locate Claude session file for {session_id}")
-                        })?,
+                        })?
+                    }
                     claude_code::driver::AgentProvider::Codex => PathBuf::new(),
                 };
                 let resume = crate::claude_code_view::ResumeSession {

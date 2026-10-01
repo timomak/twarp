@@ -742,6 +742,8 @@ pub struct ClaudeCodePane {
     /// twarp 26d: JSON-encoded spawn provenance for panes created via the
     /// sessions MCP `create_chat` tool; NULL for user-opened panes.
     pub spawn_origin: Option<String>,
+    /// Exact provider transcript path for sessions whose checkout was relocated.
+    pub history_path: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -752,6 +754,7 @@ pub struct NewClaudeCodePane {
     pub cwd: Option<String>,
     pub provider: String,
     pub spawn_origin: Option<String>,
+    pub history_path: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Selectable)]

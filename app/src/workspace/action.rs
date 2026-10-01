@@ -245,6 +245,10 @@ pub enum WorkspaceAction {
     ShowMcps,
     /// twarp 21a: open the Pull Requests page in a main pane.
     ShowPullRequests,
+    RefreshPullRequests,
+    RetryProjectDirectory,
+    LocateProjectDirectory,
+    LocateProjectDirectoryAt(PathBuf),
     /// twarp 21e: open a Claude Code pane in a new tab seeded with a
     /// PR-review prompt, cwd'd at the PR's local checkout.
     ReviewPrWithClaude {
@@ -871,6 +875,10 @@ impl WorkspaceAction {
             | ShowSkills
             | ShowMcps
             | ShowPullRequests
+            | RefreshPullRequests
+            | RetryProjectDirectory
+            | LocateProjectDirectory
+            | LocateProjectDirectoryAt(_)
             | ReviewPrWithClaude { .. }
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }

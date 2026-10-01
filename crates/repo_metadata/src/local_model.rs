@@ -53,6 +53,10 @@ use crate::file_tree_update::{
 use ignore::gitignore::Gitignore;
 use twarpui::ModelContext;
 
+#[cfg(feature = "local_fs")]
+#[path = "local_loading.rs"]
+mod local_loading;
+
 /// Maximum depth to traverse when building file trees
 const MAX_TREE_DEPTH: usize = 200;
 
@@ -113,6 +117,8 @@ pub struct LocalRepoMetadataModel {
     repositories: HashMap<StandardizedPath, IndexedRepoState>,
     /// Refcounts for lazily-loaded standalone paths tracked in the model.
     lazy_loaded_paths: HashMap<StandardizedPath, usize>,
+    #[cfg(feature = "local_fs")]
+    lazy_loading: local_loading::LazyLoading,
     /// File system watcher for monitoring changes.
     #[cfg(feature = "local_fs")]
     watcher: Option<ModelHandle<BulkFilesystemWatcher>>,
@@ -204,6 +210,8 @@ impl LocalRepoMetadataModel {
             repositories: HashMap::new(),
             lazy_loaded_paths: HashMap::new(),
             #[cfg(feature = "local_fs")]
+            lazy_loading: Default::default(),
+            #[cfg(feature = "local_fs")]
             watcher: None,
             emit_incremental_updates: false,
         };
@@ -293,6 +301,7 @@ impl LocalRepoMetadataModel {
                 let repo_path_clone = repo_path.clone();
                 let gitignores_clone = state.gitignores.clone();
                 let lazy_load = self.lazy_loaded_paths.contains_key(&repo_path);
+                let lazy_epoch = self.lazy_loading.epochs.get(&repo_path).copied();
                 ctx.spawn(
                     async move {
                         let mutations = Self::compute_file_tree_mutations(
@@ -301,9 +310,12 @@ impl LocalRepoMetadataModel {
                             lazy_load,
                         )
                         .await;
-                        (mutations, repo_path_clone, lazy_load)
+                        (mutations, repo_path_clone, lazy_load, lazy_epoch)
                     },
-                    |model, (mutations, repo_path, lazy_load), ctx| {
+                    |model, (mutations, repo_path, lazy_load, lazy_epoch), ctx| {
+                        if model.lazy_loading.epochs.get(&repo_path).copied() != lazy_epoch {
+                            return;
+                        }
                         if let Some(IndexedRepoState::Indexed(state)) =
                             model.repositories.get_mut(&repo_path)
                         {
@@ -407,6 +419,8 @@ impl LocalRepoMetadataModel {
         repo_path: &StandardizedPath,
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), RepoMetadataError> {
+        #[cfg(feature = "local_fs")]
+        self.lazy_loading.cancel(repo_path);
         if self.repositories.remove(repo_path).is_some() {
             // Unregister from watcher
             #[cfg(feature = "local_fs")]
@@ -528,6 +542,13 @@ impl LocalRepoMetadataModel {
             return;
         }
         self.lazy_loaded_paths.remove(path);
+        if self.release_pending_lazy_root(path) {
+            ctx.emit(RepositoryMetadataEvent::RepositoryRemoved { path: path.clone() });
+            return;
+        }
+        if let Some(IndexedRepoState::Indexed(state)) = self.repositories.get(path) {
+            self.lazy_loading.cache(path.clone(), state.entry.clone());
+        }
         // remove_repository unregisters the watcher and emits RepositoryRemoved.
         let _ = self.remove_repository(path, ctx);
     }
@@ -880,6 +901,14 @@ impl LocalRepoMetadataModel {
         }
 
         let repo_path_str = std_path.to_string();
+
+        // A detected git repository supersedes an in-flight standalone scan.
+        #[cfg(feature = "local_fs")]
+        if self.lazy_loaded_paths.remove(&std_path).is_some()
+            || self.lazy_loading.has_pending_root(&std_path)
+        {
+            let _ = self.remove_repository(&std_path, ctx);
+        }
 
         // Check if the repository is already indexed or currently being indexed.
         // Allow re-indexing if the existing entry was a lazily-loaded path placeholder.

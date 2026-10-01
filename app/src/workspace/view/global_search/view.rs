@@ -348,6 +348,8 @@ pub struct GlobalSearchView {
     confirm_replace_button: ViewHandle<ActionButton>,
     cancel_replace_button: ViewHandle<ActionButton>,
     replace_preview: Option<ReplacePreview>,
+    /// Reject preview/apply completions after the query or project changes.
+    replace_generation: u64,
     replace_is_generating_preview: bool,
     replace_is_applying: bool,
     replace_error: Option<String>,
@@ -880,6 +882,7 @@ impl GlobalSearchView {
             confirm_replace_button,
             cancel_replace_button,
             replace_preview: None,
+            replace_generation: 0,
             replace_is_generating_preview: false,
             replace_is_applying: false,
             replace_error: None,
@@ -1151,6 +1154,7 @@ impl GlobalSearchView {
             return;
         }
 
+        self.replace_generation = self.replace_generation.wrapping_add(1);
         self.replace_preview = None;
         self.replace_is_generating_preview = false;
         self.replace_is_applying = false;
@@ -1178,25 +1182,36 @@ impl GlobalSearchView {
         self.sync_replace_button_state(ctx);
         ctx.notify();
 
+        self.replace_generation = self.replace_generation.wrapping_add(1);
+        let generation = self.replace_generation;
         ctx.spawn(
             generate_preview(fingerprint, replacement, candidate_paths),
-            |me, result, ctx| {
-                me.replace_is_generating_preview = false;
-                match result {
-                    Ok(preview) => {
-                        me.replace_preview = Some(preview);
-                        me.replace_error = None;
-                    }
-                    Err(err) => {
-                        me.replace_preview = None;
-                        me.replace_error =
-                            Some(format!("Could not generate replace preview: {err}"));
-                    }
-                }
-                me.sync_replace_button_state(ctx);
-                ctx.notify();
-            },
+            move |me, result, ctx| me.finish_replace_preview(generation, result, ctx),
         );
+    }
+
+    fn finish_replace_preview(
+        &mut self,
+        generation: u64,
+        result: anyhow::Result<ReplacePreview>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if generation != self.replace_generation {
+            return;
+        }
+        self.replace_is_generating_preview = false;
+        match result {
+            Ok(preview) => {
+                self.replace_preview = Some(preview);
+                self.replace_error = None;
+            }
+            Err(err) => {
+                self.replace_preview = None;
+                self.replace_error = Some(format!("Could not generate replace preview: {err}"));
+            }
+        }
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
     }
 
     fn toggle_replace_preview_file(&mut self, path: &Path, ctx: &mut ViewContext<Self>) {
@@ -1255,9 +1270,13 @@ impl GlobalSearchView {
         self.sync_replace_button_state(ctx);
         ctx.notify();
 
+        let generation = self.replace_generation;
         ctx.spawn(
             async move { apply_preview_to_disk(&preview, open_paths).await },
-            |me, summary, ctx| {
+            move |me, summary, ctx| {
+                if generation != me.replace_generation {
+                    return;
+                }
                 me.replace_is_applying = false;
                 me.replace_preview = None;
                 me.replace_summary = Some(summary);
@@ -1327,7 +1346,9 @@ impl GlobalSearchView {
         self.last_searched_filters = filters;
 
         let roots = self.search_roots.clone();
-        self.find_model.update(ctx, |model, model_ctx| {
+        // Record the dispatched id before queued model events are delivered.
+        // A later cancellation can then reject even a pending Started event.
+        self.current_search_id = self.find_model.update(ctx, |model, model_ctx| {
             model.run_search(
                 pattern.clone(),
                 roots,
@@ -1338,21 +1359,22 @@ impl GlobalSearchView {
                     excludes,
                 },
                 model_ctx,
-            );
+            )
         });
     }
 
     fn handle_find_model_event(&mut self, event: &GlobalSearchEvent, ctx: &mut ViewContext<Self>) {
         match event {
             GlobalSearchEvent::Started { search_id } => {
+                if Some(*search_id) != self.current_search_id {
+                    return;
+                }
                 send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchQueryStarted, ctx);
 
                 self.current_search_id = Some(*search_id);
 
                 self.is_search_in_progress = true;
-                self.replace_preview = None;
-                self.replace_error = None;
-                self.replace_summary = None;
+                self.dismiss_replace_preview(ctx);
                 self.reset_search_state(false);
                 self.sync_replace_button_state(ctx);
                 ctx.notify();
@@ -1408,12 +1430,25 @@ impl GlobalSearchView {
         }
     }
 
-    pub fn set_root_directories(&mut self, roots: Vec<PathBuf>, _ctx: &mut ViewContext<Self>) {
+    pub fn set_root_directories(&mut self, roots: Vec<PathBuf>, ctx: &mut ViewContext<Self>) {
+        if self.root_directories == roots {
+            return;
+        }
+        self.cancel_search(ctx);
+        self.dismiss_replace_preview(ctx);
+        self.reset_search_state(true);
+        self.scroll_state = ScrollStateHandle::default();
         // Ancestor-dedup search roots so we don't search the same file twice
         // when terminal directories are nested (e.g. `~/code` + `~/code/a`).
         // Shared with `FileTreeView` for consistency.
         self.search_roots = twarp_util::path::group_roots_by_common_ancestor(&roots).roots;
         self.root_directories = roots;
+        if !self.search_roots.is_empty() {
+            // A project switch must rerun even while keyboard focus is in the results.
+            self.rerun_search_from_query(ctx, true);
+        }
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
     }
 
     /// Pre-populates the search query with the given text.
@@ -3225,3 +3260,7 @@ impl GlobalSearchView {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "view_tests.rs"]
+mod tests;

@@ -39,6 +39,7 @@ mod composer;
 mod diff_cards;
 mod inline_action;
 mod repo_context;
+mod session_history;
 mod thinking;
 mod timeline;
 mod todos;
@@ -396,6 +397,7 @@ pub enum ClaudeCodeViewEvent {
         provider: AgentProvider,
         session_id: String,
         cwd: Option<PathBuf>,
+        resume_transcript_path: Option<PathBuf>,
         /// Resolved against the captured login-shell PATH so GUI launches can
         /// find the same provider executable as an interactive terminal.
         binary: String,
@@ -921,6 +923,9 @@ pub struct ClaudeCodeView {
     /// mode change re-attaches a live conversation, §25). Cleared if a resumed
     /// spawn dies so the next message can start fresh (§37).
     resume_session_id: Option<String>,
+    /// The provider-owned transcript can live outside the current checkout's
+    /// history directory after a folder relocation. Never move that file.
+    claude_history_path: Option<PathBuf>,
     /// The pane's session identity, owned from birth (PRODUCT §41): a fresh
     /// pane generates a UUID and pins it via `--session-id`; a resumed pane
     /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
@@ -1404,10 +1409,31 @@ impl ClaudeCodeView {
                 .or_else(|| std::env::current_dir().ok())
                 .and_then(|cwd| sessions::sessions_dir(&cwd))?;
             Some(ResumeSession {
-                jsonl_path: dir.join(format!("{session_id}.jsonl")),
+                jsonl_path: Self::resolve_claude_history_path(
+                    cwd.as_deref(),
+                    &session_id,
+                    None,
+                    ctx,
+                )
+                .unwrap_or_else(|| dir.join(format!("{session_id}.jsonl"))),
                 session_id,
             })
         });
+        let resume = resume.map(|mut resume| {
+            if provider == AgentProvider::Claude {
+                resume.jsonl_path = Self::resolve_claude_history_path(
+                    cwd.as_deref(),
+                    &resume.session_id,
+                    Some(&resume.jsonl_path),
+                    ctx,
+                )
+                .unwrap_or(resume.jsonl_path);
+            }
+            resume
+        });
+        let claude_history_path = (provider == AgentProvider::Claude)
+            .then(|| resume.as_ref().map(|resume| resume.jsonl_path.clone()))
+            .flatten();
 
         let restored_session = resume.is_some();
 
@@ -1468,6 +1494,7 @@ impl ClaudeCodeView {
             model,
             effort,
             resume_session_id: None,
+            claude_history_path,
             session_id,
             sessions_registry_key: None,
             spawn_origin: None,
@@ -1678,6 +1705,50 @@ impl ClaudeCodeView {
         self.cwd.as_ref()
     }
 
+    /// The next process uses this machine's explicit folder replacement. Keep
+    /// `self.cwd` as the original directory context and track history separately.
+    fn execution_directory(&self, ctx: &AppContext) -> PathBuf {
+        let cwd = self
+            .cwd
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        crate::projects::ProjectManagementModel::as_ref(ctx).resolve_directory(&cwd)
+    }
+
+    pub(crate) fn resolve_claude_history_path(
+        cwd: Option<&Path>,
+        session_id: &str,
+        recorded: Option<&Path>,
+        ctx: &AppContext,
+    ) -> Option<PathBuf> {
+        let cwd = cwd
+            .map(Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok());
+        let original = cwd
+            .as_deref()
+            .and_then(|cwd| sessions::session_file(cwd, session_id));
+        let mapped = cwd.as_deref().and_then(|cwd| {
+            let mapped =
+                crate::projects::ProjectManagementModel::as_ref(ctx).resolve_directory(cwd);
+            (mapped != cwd)
+                .then(|| sessions::session_file(&mapped, session_id))
+                .flatten()
+        });
+        session_history::existing_path(recorded, original, mapped)
+    }
+
+    pub(crate) fn claude_history_path(&self, ctx: &AppContext) -> Option<PathBuf> {
+        if self.provider != AgentProvider::Claude {
+            return None;
+        }
+        Self::resolve_claude_history_path(
+            self.cwd.as_deref(),
+            &self.session_id,
+            self.claude_history_path.as_deref(),
+            ctx,
+        )
+    }
+
     /// The Claude session id this view is bound to. Every pane has one from
     /// birth (a resumed pane adopts the resumed id, a fresh pane mints a UUID),
     /// so this is safe to match on to detect a session already open in a pane.
@@ -1865,6 +1936,7 @@ impl ClaudeCodeView {
         let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
             return;
         };
+        let cwd = crate::projects::ProjectManagementModel::as_ref(ctx).resolve_directory(&cwd);
         let folder = repo_context::folder_name(&cwd);
         let command = repo_context::build_command(&cwd);
         let shell_state = LocalShellState::as_ref(ctx);
@@ -1907,6 +1979,7 @@ impl ClaudeCodeView {
         let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
             return;
         };
+        let cwd = crate::projects::ProjectManagementModel::as_ref(ctx).resolve_directory(&cwd);
         let dir = cwd.to_string_lossy().replace('\'', r"'\''");
         let command = format!("cd '{dir}' 2>/dev/null || exit 0\n{command}\n");
         let shell_state = LocalShellState::as_ref(ctx);
@@ -3742,11 +3815,10 @@ impl ClaudeCodeView {
     /// but a local `git worktree add` is sub-second and only runs on the user's
     /// explicit toggle + first send.
     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
-    fn create_worktree(&self) -> Option<PathBuf> {
-        let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok())?;
+    fn create_worktree(&self, cwd: &Path) -> Option<PathBuf> {
         let parent = cwd.parent()?;
         // A readable, collision-resistant name: `<folder>-<short session id>`.
-        let folder = repo_context::folder_name(&cwd).unwrap_or_else(|| "work".to_owned());
+        let folder = repo_context::folder_name(cwd).unwrap_or_else(|| "work".to_owned());
         let short: String = self
             .session_id
             .chars()
@@ -3760,7 +3832,7 @@ impl ClaudeCodeView {
         }
         let mut command = std::process::Command::new("git");
         command
-            .current_dir(&cwd)
+            .current_dir(cwd)
             .args(["worktree", "add", "-b", &name])
             .arg(&target);
         if let Some(path_env) = &self.interactive_path {
@@ -3773,7 +3845,7 @@ impl ClaudeCodeView {
     }
 
     #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
-    fn create_worktree(&self) -> Option<PathBuf> {
+    fn create_worktree(&self, _cwd: &Path) -> Option<PathBuf> {
         None
     }
 
@@ -3792,7 +3864,7 @@ impl ClaudeCodeView {
         // branch, so the agent's work doesn't touch the original checkout. Only
         // for a fresh (non-resumed) session; falls back to the cwd on any error.
         if self.use_worktree && self.resume_session_id.is_none() {
-            if let Some(worktree) = self.create_worktree() {
+            if let Some(worktree) = self.create_worktree(&self.execution_directory(ctx)) {
                 self.cwd = Some(worktree);
                 self.use_worktree = false;
                 self.refresh_repo_context(ctx);
@@ -3803,15 +3875,23 @@ impl ClaudeCodeView {
                 ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::RepoChanged));
             }
         }
+        let execution_directory = self.execution_directory(ctx);
+        let resume_transcript_path = (self.provider == AgentProvider::Claude
+            && self.resume_session_id.is_some())
+        .then(|| self.claude_history_path(ctx))
+        .flatten();
+        if self.provider == AgentProvider::Claude {
+            self.claude_history_path = resume_transcript_path
+                .clone()
+                .or_else(|| sessions::session_file(&execution_directory, &self.session_id));
+        }
         let opts = SpawnOptions {
             provider: self.provider,
-            cwd: self
-                .cwd
-                .clone()
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            cwd: execution_directory,
             model: self.model.clone(),
             effort: self.effort.clone(),
             resume_session_id: self.resume_session_id.clone(),
+            resume_transcript_path,
             // A fresh session spawns under the pane's own id (PRODUCT §41);
             // a resume continues the id it targets.
             session_id: self
@@ -4385,10 +4465,18 @@ impl ClaudeCodeView {
         // recording silently.
         self.cancel_voice_recording(ctx);
         self.detach_live_session();
+        let execution_directory = self.execution_directory(ctx);
+        let resume_transcript_path = self.claude_history_path(ctx);
+        if self.provider == AgentProvider::Claude {
+            self.claude_history_path = resume_transcript_path
+                .clone()
+                .or_else(|| sessions::session_file(&execution_directory, &self.session_id));
+        }
         ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
             provider: self.provider,
             session_id: self.session_id.clone(),
-            cwd: self.cwd.clone(),
+            cwd: Some(execution_directory),
+            resume_transcript_path,
             binary: self.resolve_provider_binary(),
             flags: build_raw_cli_flags(
                 self.provider,
@@ -4480,15 +4568,10 @@ impl ClaudeCodeView {
     /// next message continues it live. Best-effort like every store read: a
     /// missing file just renders what the pane already had.
     pub fn refresh_from_disk(&mut self, ctx: &mut ViewContext<Self>) {
-        let dir = self
-            .cwd
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .and_then(|cwd| sessions::sessions_dir(&cwd));
-        let Some(dir) = dir else {
+        let Some(jsonl_path) = self.claude_history_path(ctx) else {
             return;
         };
-        let jsonl_path = dir.join(format!("{}.jsonl", self.session_id));
+        self.claude_history_path = Some(jsonl_path.clone());
         let history = sessions::load_history(&jsonl_path);
         if history.is_empty() {
             // Nothing (re)readable on disk — keep the rendered transcript
@@ -5769,6 +5852,7 @@ impl ClaudeCodeView {
         // readable from disk — it is replayed by the app-server's
         // `thread/resume` response, so a Codex pane spawns eagerly below.
         if session.provider == AgentProvider::Claude {
+            self.claude_history_path = Some(session.jsonl_path.clone());
             for event in sessions::load_history(&session.jsonl_path) {
                 self.ingest_event(event, ctx);
             }
@@ -5805,16 +5889,10 @@ impl ClaudeCodeView {
         // The live conversation is always stored under the pane's own session id
         // (`--session-id` for a fresh pane, `--resume <id>` for a resumed one,
         // where `session_id == resume id`). Forking needs that file on disk.
-        let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
+        let Some(parent_path) = self.claude_history_path(ctx) else {
             return;
         };
-        let Some(parent_path) = sessions::session_file(&cwd, &self.session_id) else {
-            return;
-        };
-        if !parent_path.exists() {
-            // Nothing persisted yet (first turn still streaming) — nothing to fork.
-            return;
-        }
+        let cwd = self.execution_directory(ctx);
 
         // Keep every user turn up to and including the one this response belongs
         // to. `User` items map 1:1 to the `UserMessage` events `fork_session_file`
@@ -9999,6 +10077,8 @@ impl TypedActionView for ClaudeCodeView {
                 } else {
                     self.cwd.as_ref().map(|cwd| cwd.join(&path)).unwrap_or(path)
                 };
+                let full_path = crate::projects::ProjectManagementModel::as_ref(ctx)
+                    .resolve_directory(&full_path);
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenFileInNewTab {
                     full_path,
                     line_and_column: None,

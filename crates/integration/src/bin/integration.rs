@@ -280,6 +280,9 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_paste_and_type_characters_before_bootstrap);
     register_test!(test_code_review_source_rail_opens_and_loads);
     register_test!(test_project_sidebar_shell_smoke);
+    register_test!(test_rootless_session_pr_and_global_files_context);
+    register_test!(test_project_pr_context_is_independent_between_windows);
+    register_test!(test_restored_pr_requires_choice_for_multiple_projects);
     register_test!(test_code_review_scroll_anchor_preserved_when_inserting_above);
     register_test!(test_code_review_scroll_anchor_unchanged_when_inserting_below);
     register_test!(test_code_review_scroll_preserved_second_file);

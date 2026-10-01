@@ -17,4 +17,4 @@ pub mod list_page;
 pub mod review;
 pub mod store;
 
-pub use store::PullRequestsStoreModel;
+pub use store::{PullRequestsEvent, PullRequestsStoreModel};
