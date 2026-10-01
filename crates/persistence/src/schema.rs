@@ -130,6 +130,7 @@ diesel::table! {
         cwd -> Nullable<Text>,
         provider -> Text,
         spawn_origin -> Nullable<Text>,
+        history_path -> Nullable<Text>,
     }
 }
 

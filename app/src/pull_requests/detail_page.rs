@@ -25,7 +25,7 @@ use twarpui::{
     platform::Cursor,
     prelude::ColorU,
     units::Pixels,
-    AppContext, SingletonEntity, ViewContext, ViewHandle,
+    AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
@@ -95,6 +95,7 @@ fn action(action: PullRequestsPageAction) -> AutomationViewAction {
 /// UI state for the one open PR detail. Created on row click, dropped on
 /// back-to-list; the fetched data itself lives in the store.
 pub struct PrDetailState {
+    store: ModelHandle<PullRequestsStoreModel>,
     number: u64,
     tab: PrDetailTab,
     scroll_state: ClippedScrollStateHandle,
@@ -157,7 +158,11 @@ pub struct PrDetailState {
 }
 
 impl PrDetailState {
-    pub fn new(number: u64, ctx: &mut ViewContext<AutomationView>) -> Self {
+    pub fn new(
+        number: u64,
+        store: ModelHandle<PullRequestsStoreModel>,
+        ctx: &mut ViewContext<AutomationView>,
+    ) -> Self {
         let merge_buttons = PrMergeMethod::ALL
             .into_iter()
             .map(|method| {
@@ -229,6 +234,7 @@ impl PrDetailState {
             })
         });
         Self {
+            store: store.clone(),
             number,
             tab: PrDetailTab::default(),
             scroll_state: Default::default(),
@@ -252,7 +258,7 @@ impl PrDetailState {
             check_states: Default::default(),
             timeline_states: Default::default(),
             misc_states: Default::default(),
-            files_tab: Default::default(),
+            files_tab: FilesTabState::new(store),
             comment_editor,
             comment_button,
             comment_submitting: false,
@@ -278,7 +284,7 @@ impl PrDetailState {
     /// with in-flight mutations.
     pub fn sync(&mut self, ctx: &mut ViewContext<AutomationView>) {
         let (fingerprint, body, bodies, mutating, mutation_error, checkout_running) = {
-            let store = PullRequestsStoreModel::as_ref(ctx);
+            let store = self.store.as_ref(ctx);
             let Some(data) = store.detail_data(self.number) else {
                 return;
             };
@@ -297,7 +303,8 @@ impl PrDetailState {
 
         // 21e: a just-finished checkout opens a tab at the worktree once.
         let number = self.number;
-        let pending_open = PullRequestsStoreModel::handle(ctx)
+        let pending_open = self
+            .store
             .update(ctx, |store, _| store.take_checkout_pending_open(number));
         if let Some(path) = pending_open {
             show_toast(
@@ -402,7 +409,7 @@ impl PrDetailState {
                         // First open of the Files tab kicks off the diff +
                         // review-threads fetch.
                         let number = self.number;
-                        PullRequestsStoreModel::handle(ctx)
+                        self.store
                             .update(ctx, |store, ctx| store.ensure_files(number, ctx));
                     }
                 }
@@ -421,25 +428,25 @@ impl PrDetailState {
             ConfirmMerge => {
                 if let Some(method) = self.pending_merge.take() {
                     let number = self.number;
-                    PullRequestsStoreModel::handle(ctx)
+                    self.store
                         .update(ctx, |store, ctx| store.merge_pr(number, method, ctx));
                 }
             }
             CancelMerge => self.pending_merge = None,
             MarkReady => {
                 let number = self.number;
-                PullRequestsStoreModel::handle(ctx)
+                self.store
                     .update(ctx, |store, ctx| store.mark_ready(number, ctx));
             }
             RefreshDetail => {
                 let number = self.number;
                 let refresh_files = {
-                    let store = PullRequestsStoreModel::as_ref(ctx);
+                    let store = self.store.as_ref(ctx);
                     store
                         .detail_data(number)
                         .is_some_and(|data| data.files.fetched)
                 };
-                PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+                self.store.update(ctx, |store, ctx| {
                     store.fetch_detail(number, ctx);
                     if refresh_files {
                         store.fetch_files(number, ctx);
@@ -458,7 +465,8 @@ impl PrDetailState {
                     return;
                 }
                 let number = self.number;
-                let started = PullRequestsStoreModel::handle(ctx)
+                let started = self
+                    .store
                     .update(ctx, |store, ctx| store.comment_pr(number, body, ctx));
                 if started {
                     self.comment_submitting = true;
@@ -524,7 +532,7 @@ impl PrDetailState {
             // 21e: header actions.
             ReviewWithClaude => {
                 let (repo, title) = {
-                    let store = PullRequestsStoreModel::as_ref(ctx);
+                    let store = self.store.as_ref(ctx);
                     let Some(repo) = store.selected_repo().map(|p| p.to_path_buf()) else {
                         return;
                     };
@@ -554,11 +562,13 @@ impl PrDetailState {
             }
             CheckoutPr => {
                 let number = self.number;
-                PullRequestsStoreModel::handle(ctx)
+                self.store
                     .update(ctx, |store, ctx| store.checkout_pr(number, ctx));
             }
             CopyBranchName => {
-                let branch = PullRequestsStoreModel::as_ref(ctx)
+                let branch = self
+                    .store
+                    .as_ref(ctx)
                     .detail_data(self.number)
                     .and_then(|data| data.detail.as_ref())
                     .map(|detail| detail.head_ref.clone());
@@ -593,7 +603,8 @@ impl PrDetailState {
         }
         let payload = build_review_payload(event, &body, self.files_tab.drafts().drafts());
         let number = self.number;
-        let started = PullRequestsStoreModel::handle(ctx)
+        let started = self
+            .store
             .update(ctx, |store, ctx| store.submit_review(number, payload, ctx));
         if started {
             self.review_submitting = true;
@@ -604,7 +615,7 @@ impl PrDetailState {
     pub fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let store = PullRequestsStoreModel::as_ref(app);
+        let store = self.store.as_ref(app);
         let data = store.detail_data(self.number);
         let sub = theme.sub_text_color(theme.background());
 

@@ -324,6 +324,7 @@ pub struct LeftPanelView {
     /// The project shell currently presents this view as the Files tool.
     /// The legacy shell derives visibility from `PaneGroup::left_panel_open`.
     project_files_visible: bool,
+    project_context_label: Option<String>,
 
     /// twarp 07 (7h, PRODUCT §35): the active cwd's stored Claude Code
     /// sessions, refreshed when the tab opens or the cwd changes. Read-only —
@@ -505,12 +506,13 @@ impl LeftPanelView {
                     }
                 });
 
-                // twarp 07 (7h): the session-list entry follows the active
-                // cwd (PRODUCT §35) — existence probe for the toolbelt
-                // button; full re-list only while the tab is open.
-                me.has_claude_sessions = me
-                    .active_claude_sessions_cwd(ctx)
-                    .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+                // The project shell has no stored-sessions toolbelt entry.
+                // Avoid walking provider session stores on its context changes.
+                if !super::project_sidebar_enabled() {
+                    me.has_claude_sessions = me
+                        .active_claude_sessions_cwd(ctx)
+                        .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+                }
                 if me.active_view.get() == ToolPanelView::ClaudeSessions {
                     me.refresh_claude_sessions(ctx);
                 }
@@ -563,6 +565,7 @@ impl LeftPanelView {
             timeline_scroll_state: twarpui::elements::ClippedScrollStateHandle::default(),
             timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
             project_files_visible: false,
+            project_context_label: None,
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
@@ -973,11 +976,13 @@ impl LeftPanelView {
 
         self.on_left_panel_visibility_changed(left_panel_open, ctx);
 
-        // twarp 07 (7h): the session list follows the active pane group's cwd
-        // (PRODUCT §35) — re-probe on every group switch.
-        self.has_claude_sessions = self
-            .active_claude_sessions_cwd(ctx)
-            .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+        // Only the legacy toolbelt needs implicit stored-session discovery.
+        // An explicitly opened session list still refreshes below.
+        if !super::project_sidebar_enabled() {
+            self.has_claude_sessions = self
+                .active_claude_sessions_cwd(ctx)
+                .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+        }
         if self.active_view.get() == ToolPanelView::ClaudeSessions {
             self.refresh_claude_sessions(ctx);
         }
@@ -1125,6 +1130,12 @@ impl LeftPanelView {
     #[cfg(feature = "local_fs")]
     fn handle_file_tree_event(&mut self, event: &FileTreeEvent, ctx: &mut ViewContext<Self>) {
         match event {
+            FileTreeEvent::RetryProjectDirectory => {
+                ctx.dispatch_typed_action(&WorkspaceAction::RetryProjectDirectory)
+            }
+            FileTreeEvent::LocateProjectDirectory => {
+                ctx.dispatch_typed_action(&WorkspaceAction::LocateProjectDirectory)
+            }
             FileTreeEvent::FileRenamed { old_path, new_path } => {
                 ctx.emit(LeftPanelEvent::FileTree(pane_group::Event::FileRenamed {
                     old_path: old_path.clone(),
@@ -2462,6 +2473,22 @@ impl LeftPanelView {
         .finish()
     }
 
+    #[cfg(feature = "local_fs")]
+    pub(crate) fn set_project_context(
+        &mut self,
+        label: Option<String>,
+        error: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.project_context_label != label {
+            self.project_context_label = label;
+            ctx.notify();
+        }
+        if let Some(view) = self.active_file_tree_view(ctx) {
+            view.update(ctx, |view, ctx| view.set_project_context_error(error, ctx));
+        }
+    }
+
     fn render_search_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         Container::new(
             Text::new_inline(
@@ -2788,6 +2815,23 @@ impl View for LeftPanelView {
 
             if let Some(header) = tool_header {
                 column.add_child(header);
+            }
+            if let Some(label) = &self.project_context_label {
+                column.add_child(
+                    Container::new(
+                        Text::new(
+                            label.clone(),
+                            appearance.ui_font_family(),
+                            type_ramp::CAPTION.size,
+                        )
+                        .with_color(sidebar_subtext(appearance))
+                        .finish(),
+                    )
+                    .with_padding_left(spacing::MD)
+                    .with_padding_right(spacing::MD)
+                    .with_padding_bottom(spacing::XS)
+                    .finish(),
+                );
             }
             column.add_child(Shrinkable::new(1.0, content_area).finish());
             column.with_main_axis_size(MainAxisSize::Max).finish()

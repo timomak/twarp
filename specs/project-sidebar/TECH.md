@@ -65,6 +65,18 @@ This refinement supersedes any older detail later in this plan that describes on
 
 ## Proposed changes
 
+### Context and performance repair (2026-10-01)
+
+`AutomationView` owns its PR store instead of using an application singleton. Workspace reconciliation hydrates both newly opened and restored PR pages, observes late directory discovery and project-library changes, preserves explicit selections, and recollects candidates on Refresh. Changing repository invalidates in-flight detail/file results.
+
+`Workspace::project_context` tracks the last local project and directory validation separately from `TabData::project_root`. `WorkingDirectoriesModel` can project a tool context for a global page without overwriting its raw session inputs. Missing folders stay identifiable through validation errors. `ProjectManagementModel` persists explicit directory replacements in machine-local private preferences. Claude pane snapshots retain their original cwd and session UUID, and optionally pin the provider-owned transcript path so repeated checkout relocations cannot hide history. Legacy snapshots resolve only their original and explicitly mapped transcript locations. Resume passes the transcript path separately from the UUID identity; no history files are moved or rewritten. Folder validation and repository detection run in the background.
+
+Window bounds register a dependency only for the window whose dimensions a view reads. Size changes invalidate that view; moves and repeated identical sizes do not. The workspace's `ConstrainedBox` reads the current zoom-adjusted layout viewport. Animation callbacks carry the lifetime of the slide that scheduled them so a replaced slide cannot keep waking the workspace.
+
+The local metadata model schedules lazy roots and expanded-directory reads asynchronously, discards stale completions, and retains a bounded set of inactive roots. FileTree filters repository updates to displayed roots and preserves expansion state across ordinary visibility toggles. Empty, loading, failed, and populated states are distinct.
+
+Regression checks cover context priority, per-window PR state, directory replacement persistence and cycle rejection, error attribution, metadata load lifecycle, tree visibility, animation reversal, zoomed layout constraints, and resize dependency invalidation. Manual validation must use an isolated app profile and a populated fixture repository, leaving real sessions and the installed app intact.
+
 ### 1. Add a guarded project-sidebar shell
 
 Add `FeatureFlag::ProjectSidebar` using the repository's feature-flag workflow. Define one helper in `app/src/workspace/view.rs`:
@@ -487,6 +499,12 @@ cargo clippy --workspace -- -D warnings
 ```
 
 If the full clippy/test suite has a baseline or environment failure, report it separately and retain successful targeted evidence for the changed modules.
+
+Final validation on 2026-10-01 passed 251 targeted unit tests, covering PR context, folder replacement, Search cancellation, working-directory overlays, context resolution, animation, Files, repository metadata, provider history, and the nullable transcript-path migration. Three isolated workspace integrations passed: rootless session to PR/Settings with visible Files, independent PR state in two windows, and an ambiguous restored PR page requiring a project choice. Fixtures use temporary directories and an offline GitHub CLI stub.
+
+The full UI-core suite passed 284 tests, ignored 7, and reproduced the existing `test_model_resurrected_before_flush_survives` failure on clean baseline `85dddf7e`. All four new resize/zoom dependency tests passed. Workspace clippy stops at the unchanged `new_scrollable::mousewheel` argument-count warning. Repository formatting also fails on existing baseline files; changed code was formatted without rewriting unrelated sections.
+
+The normal native `cargo build --bin twarp-oss` passed with real Metal compilation. The rootless PR/Files integration also passed with a real GPU display in an isolated profile. The temporary shader bypass used during initial investigation is absent from the final source and validation. Populated-tree toggle/resize profiling at default and non-default zoom remains unmeasured; the tests establish correctness without claiming a quantified live-resize improvement. GitHub Actions are disabled on the writable fork, so there are no hosted checks for this change.
 
 ## Risks and mitigations
 

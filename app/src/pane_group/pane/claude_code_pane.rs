@@ -28,14 +28,8 @@ fn raw_cli_command(
     binary: &str,
     flags: &str,
     session_id: &str,
-    cwd: Option<&std::path::Path>,
+    resume_transcript_path: Option<&std::path::Path>,
 ) -> String {
-    let persisted_claude_session = provider == AgentProvider::Claude
-        && cwd
-            .map(std::path::Path::to_path_buf)
-            .or_else(|| std::env::current_dir().ok())
-            .and_then(|cwd| claude_code::sessions::session_file(&cwd, session_id))
-            .is_some_and(|path| path.exists());
     let binary = shell_words::quote(binary);
     let session_id = shell_words::quote(session_id);
     let flags = if flags.is_empty() {
@@ -45,8 +39,8 @@ fn raw_cli_command(
     };
     match provider {
         AgentProvider::Claude => {
-            let session_arg = if persisted_claude_session {
-                format!("--resume {session_id}")
+            let session_arg = if let Some(path) = resume_transcript_path {
+                format!("--resume {}", shell_words::quote(&path.to_string_lossy()))
             } else {
                 format!("--session-id {session_id}")
             };
@@ -164,13 +158,19 @@ impl PaneContent for ClaudeCodePane {
                     provider,
                     session_id,
                     cwd,
+                    resume_transcript_path,
                     binary,
                     flags,
                 } => {
                     let (manager, terminal) =
                         pane_group.create_raw_agent_terminal(cwd.clone(), ctx);
-                    let command =
-                        raw_cli_command(*provider, binary, flags, session_id, cwd.as_deref());
+                    let command = raw_cli_command(
+                        *provider,
+                        binary,
+                        flags,
+                        session_id,
+                        resume_transcript_path.as_deref(),
+                    );
                     terminal.update(ctx, |terminal, ctx| {
                         // `exec` makes CLI exit the terminal's exit signal; the
                         // absolute provider path avoids the bare-agent trigger.
@@ -246,17 +246,15 @@ impl PaneContent for ClaudeCodePane {
         let cwd = view.cwd().cloned();
         let session_id = view.session_id().to_owned();
         let provider = view.provider();
+        let history_path = view.claude_history_path(app);
         let has_session = match provider {
-            claude_code::driver::AgentProvider::Claude => cwd
-                .clone()
-                .or_else(|| std::env::current_dir().ok())
-                .and_then(|cwd| claude_code::sessions::session_file(&cwd, &session_id))
-                .is_some_and(|path| path.exists()),
+            claude_code::driver::AgentProvider::Claude => history_path.is_some(),
             claude_code::driver::AgentProvider::Codex => view.has_provider_session(),
         };
         LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
             session_id: has_session.then_some(session_id),
             cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
+            history_path: history_path.map(|path| path.to_string_lossy().into_owned()),
             provider,
             // twarp 26d: persist the spawn provenance so the header badge
             // survives restore (PRODUCT 26 P#22).
@@ -332,6 +330,10 @@ impl PaneContent for ClaudeCodePane {
         self.view.as_ref(ctx).is_being_dragged()
     }
 }
+
+#[cfg(test)]
+#[path = "claude_code_pane_history_tests.rs"]
+mod history_tests;
 
 #[cfg(test)]
 mod tests {

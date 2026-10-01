@@ -23,6 +23,21 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::FileTreeView;
 
+async fn wait_for_explorer_io(app: &mut App) {
+    use twarpui::r#async::FutureExt as _;
+    async {
+        loop {
+            futures_lite::future::yield_now().await;
+            if !app.update(|ctx| RepoMetadataModel::as_ref(ctx).has_pending_explorer_loads(ctx)) {
+                break;
+            }
+        }
+    }
+    .with_timeout(std::time::Duration::from_secs(5))
+    .await
+    .expect("explorer background reads complete");
+}
+
 fn std_path(path: &std::path::Path) -> twarp_util::standardized_path::StandardizedPath {
     twarp_util::standardized_path::StandardizedPath::try_from_local(path).unwrap()
 }
@@ -152,11 +167,13 @@ fn hidden_files_are_filtered_until_setting_is_enabled() {
             set_show_hidden_files(&mut app, false);
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let paths = flattened_paths(view, &tree);
                 assert!(paths.contains(&std_path(&tree)));
@@ -167,6 +184,7 @@ fn hidden_files_are_filtered_until_setting_is_enabled() {
 
             set_show_hidden_files(&mut app, true);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let paths = flattened_paths(view, &tree);
                 assert!(paths.contains(&std_path(&hidden_file)));
@@ -192,11 +210,13 @@ fn hidden_root_directory_is_not_filtered() {
             set_show_hidden_files(&mut app, false);
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![hidden_root.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let paths = flattened_paths(view, &hidden_root);
                 assert!(paths.contains(&std_path(&hidden_root)));
@@ -225,10 +245,13 @@ fn selected_hidden_file_is_cleared_when_filtered() {
 
                 let (_, file_tree_view) =
                     app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_is_active(true, ctx);
                     view.set_root_directories(vec![tree.clone()], ctx);
-
+                });
+                wait_for_explorer_io(&mut app).await;
+                file_tree_view.update(&mut app, |view, ctx| {
                     let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
                     let (index, _) = root_dir
                         .items
@@ -245,6 +268,7 @@ fn selected_hidden_file_is_cleared_when_filtered() {
 
                 set_show_hidden_files(&mut app, false);
 
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.read(&app, |view, _ctx| {
                     let paths = flattened_paths(view, &tree);
                     assert!(!paths.contains(&std_path(&hidden_file)));
@@ -281,11 +305,13 @@ fn repo_transition_unregisters_lazy_loaded_path() {
                 repositories.insert_test_repo_root(canonical_repo_root.clone());
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![displayed_root.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.registered_lazy_loaded_paths.contains(
                     &twarp_util::standardized_path::StandardizedPath::try_from_local(
@@ -319,10 +345,12 @@ fn repo_transition_unregisters_lazy_loaded_path() {
                 model.insert_test_state(canonical_repo_root, build_repo_state(&repo_root), ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_root_directories(vec![displayed_root.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let displayed_std =
                     twarp_util::standardized_path::StandardizedPath::try_from_local(
@@ -397,11 +425,13 @@ fn repo_backed_unloaded_directory_loads_through_model() {
                 );
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![repo_root.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(!view
                     .root_directories
@@ -419,6 +449,7 @@ fn repo_backed_unloaded_directory_loads_through_model() {
                     )));
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.ensure_loaded_path(
                     &twarp_util::standardized_path::StandardizedPath::try_from_local(&repo_root)
@@ -429,6 +460,7 @@ fn repo_backed_unloaded_directory_loads_through_model() {
                 );
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view
                     .root_directories
@@ -446,6 +478,7 @@ fn repo_backed_unloaded_directory_loads_through_model() {
                     )));
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.ensure_loaded_path(
                     &twarp_util::standardized_path::StandardizedPath::try_from_local(&repo_root)
@@ -456,6 +489,7 @@ fn repo_backed_unloaded_directory_loads_through_model() {
                 );
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view
                     .root_directories
@@ -576,13 +610,16 @@ fn failed_lazy_loaded_path_registration_is_retried() {
 
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![displayed_root.clone()], ctx);
             });
 
-            file_tree_view.read(&app, |view, _ctx| {
-                assert!(!view.registered_lazy_loaded_paths.contains(
+            wait_for_explorer_io(&mut app).await;
+            file_tree_view.read(&app, |view, ctx| {
+                assert!(view.directory_loading_error(ctx).is_some());
+                assert!(view.registered_lazy_loaded_paths.contains(
                     &twarp_util::standardized_path::StandardizedPath::try_from_local(
                         &displayed_root
                     )
@@ -590,7 +627,7 @@ fn failed_lazy_loaded_path_registration_is_retried() {
                 ));
             });
             repository_metadata_model.read(&app, |model, ctx| {
-                assert!(!model.is_lazy_loaded_path(
+                assert!(model.is_lazy_loaded_path(
                     &twarp_util::standardized_path::StandardizedPath::try_from_local(
                         &displayed_root
                     )
@@ -602,10 +639,12 @@ fn failed_lazy_loaded_path_registration_is_retried() {
             vfs.mkdir("late_dir")
                 .with_files(vec![Stub::FileWithContent("late_dir/file.txt", "content")]);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
-                view.set_root_directories(vec![displayed_root.clone()], ctx);
+                view.retry_project_directory(ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.registered_lazy_loaded_paths.contains(&std_path(&displayed_root)));
                 assert!(matches!(
@@ -643,11 +682,13 @@ fn sibling_roots_are_preserved() {
             let _ = initialize_app(&mut app);
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![a.clone(), b.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert_eq!(view.displayed_directories, vec![std_path(&a), std_path(&b)]);
             });
@@ -673,11 +714,13 @@ fn auto_expand_overrides_selection_when_most_recent_root_changes() {
                     app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
                 // Start with `code` as the only root and select its header.
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_is_active(true, ctx);
                     view.set_root_directories(vec![code.clone()], ctx);
                     view.auto_expand_to_most_recent_directory(ctx);
                 });
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.read(&app, |view, _ctx| {
                     let selected = view.selected_item.as_ref().unwrap();
                     assert_eq!(selected.root, std_path(&code));
@@ -685,11 +728,13 @@ fn auto_expand_overrides_selection_when_most_recent_root_changes() {
 
                 // Now cd to a brand-new root. `other` becomes most-recent.
                 // Selection must move to `other`, not stay on `code`.
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_root_directories(vec![other.clone(), code.clone()], ctx);
                     view.auto_expand_to_most_recent_directory(ctx);
                 });
 
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.read(&app, |view, _ctx| {
                     let selected = view.selected_item.as_ref().expect("selection set");
                     assert_eq!(selected.root, std_path(&other));
@@ -714,6 +759,7 @@ fn auto_expand_preserves_existing_selection() {
                 let (_, file_tree_view) =
                     app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_is_active(true, ctx);
                     view.set_root_directories(vec![tree.clone()], ctx);
@@ -721,6 +767,7 @@ fn auto_expand_preserves_existing_selection() {
 
                 // Simulate a prior explicit selection (e.g. user focused a
                 // file in the code editor and `scroll_to_file` selected it).
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.toggle_folder_expansion(&std_path(&tree), &std_path(&sub), ctx);
                     let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
@@ -738,10 +785,12 @@ fn auto_expand_preserves_existing_selection() {
                 });
 
                 // Auto-expand must not override that selection with the root header.
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.auto_expand_to_most_recent_directory(ctx);
                 });
 
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.read(&app, |view, _ctx| {
                     let selected = view.selected_item.clone().expect("selection set");
                     let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
@@ -778,6 +827,7 @@ fn click_on_file_under_absorbed_descendant_keeps_file_selected() {
 
                 // Seed with `code` as the only root and expand warp-server so
                 // main.rs is materialized in the flattened items.
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_is_active(true, ctx);
                     view.set_root_directories(vec![code.clone()], ctx);
@@ -786,6 +836,7 @@ fn click_on_file_under_absorbed_descendant_keeps_file_selected() {
 
                 // Simulate a click on main.rs (select_id is what the click
                 // action and the active-file scroll both go through).
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     let root_dir = view.root_directories.get(&std_path(&code)).unwrap();
                     let (index, _) = root_dir
@@ -804,10 +855,12 @@ fn click_on_file_under_absorbed_descendant_keeps_file_selected() {
                 // Now `DirectoriesChanged` fires as a side effect of the file
                 // opening in a code view — the working-directories-model adds
                 // the file's repo/parent (warp-server) to the active set.
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.update(&mut app, |view, ctx| {
                     view.set_root_directories(vec![warp_server.clone(), code.clone()], ctx);
                 });
 
+                wait_for_explorer_io(&mut app).await;
                 file_tree_view.read(&app, |view, _ctx| {
                     // Selection is still on main.rs, not on warp-server.
                     let selected = view.selected_item.clone().expect("selection");
@@ -841,12 +894,14 @@ fn pending_focus_target_does_not_re_scroll_after_first_apply() {
             let _ = initialize_app(&mut app);
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![warp_server.clone(), tree.clone()], ctx);
             });
 
             // Initial apply should have scrolled once.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let pending = view.pending_focus_target.as_ref().expect("pending");
                 assert!(pending.scrolled);
@@ -855,11 +910,13 @@ fn pending_focus_target_does_not_re_scroll_after_first_apply() {
             // Simulate a later rebuild (e.g. metadata update). Selection
             // should still land on warp-server, but `scrolled` must stay
             // true (no re-scroll).
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, _ctx| {
                 view.rebuild_flattened_items();
                 view.apply_pending_focus_target();
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let selected = view.selected_item.clone().expect("selection");
                 let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
@@ -890,11 +947,13 @@ fn focus_follows_absorbed_descendant_once_its_item_is_materialized() {
             // User cd's into warp-server with ~/tree as the ancestor root.
             // The warp-server entry should be materialized by indexing and
             // selected as the focus-follow target.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![warp_server.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 // Single displayed root, descendant absorbed.
                 assert_eq!(view.displayed_directories, vec![std_path(&tree)]);
@@ -924,6 +983,7 @@ fn focus_follows_absorbed_descendant_once_its_item_is_materialized() {
 
             // User clicks somewhere else (simulated via select_id). Pending
             // target must clear so future rebuilds don't re-steal focus.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
                 let id = super::FileTreeIdentifier {
@@ -938,6 +998,7 @@ fn focus_follows_absorbed_descendant_once_its_item_is_materialized() {
                 view.select_id(&id, ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.pending_focus_target.is_none());
             });
@@ -957,12 +1018,14 @@ fn descendant_is_absorbed_into_ancestor() {
             let _ = initialize_app(&mut app);
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 // Input in most-recent-first order: descendant first.
                 view.set_root_directories(vec![a.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 // Only the ancestor survives as a displayed root.
                 assert_eq!(view.displayed_directories, vec![std_path(&tree)]);
@@ -989,6 +1052,7 @@ fn cd_into_descendant_absorbs_into_existing_ancestor_root() {
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
             // Start with only the ancestor displayed.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![tree.clone()], ctx);
@@ -996,10 +1060,12 @@ fn cd_into_descendant_absorbs_into_existing_ancestor_root() {
 
             // Simulate cd-ing into ~/tree/a/z by emitting the descendant as the
             // most-recent path.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_root_directories(vec![z.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 // Still a single root, no new top-level entry.
                 assert_eq!(view.displayed_directories, vec![std_path(&tree)]);
@@ -1028,6 +1094,7 @@ fn explicit_collapse_blocks_auto_expand_on_absorption() {
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
             // Start with the ancestor displayed and explicitly collapse `a`.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![tree.clone()], ctx);
@@ -1036,15 +1103,18 @@ fn explicit_collapse_blocks_auto_expand_on_absorption() {
                 view.toggle_folder_expansion(&std_path(&tree), &std_path(&a), ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.is_explicitly_collapsed(&std_path(&tree), &std_path(&a)));
             });
 
             // Now cd into ~/tree/a/z. Auto-expansion must not re-open `a`.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_root_directories(vec![z.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 let root_dir = view.root_directories.get(&std_path(&tree)).unwrap();
                 assert!(!root_dir.expanded_folders.contains(&std_path(&a)));
@@ -1070,6 +1140,7 @@ fn absorption_migrates_expanded_and_explicitly_collapsed_state() {
 
             // Start with `a` as a standalone top-level root and record
             // an explicit collapse on `a/z` under that standalone root.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![a.clone()], ctx);
@@ -1078,15 +1149,18 @@ fn absorption_migrates_expanded_and_explicitly_collapsed_state() {
                 view.toggle_folder_expansion(&std_path(&a), &std_path(&z), ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.is_explicitly_collapsed(&std_path(&a), &std_path(&z)));
             });
 
             // Now absorb `a` into `tree` by adding the ancestor.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_root_directories(vec![a.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 // Standalone absorbed-root entry is gone.
                 assert!(!view.root_directories.contains_key(&std_path(&a)));
@@ -1110,11 +1184,13 @@ fn absorbed_descendant_is_unregistered_from_lazy_loaded_paths() {
             let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
 
             // Initial state: `a` alone is a standalone lazy-loaded root.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
                 view.set_root_directories(vec![a.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(view.registered_lazy_loaded_paths.contains(&std_path(&a)));
             });
@@ -1124,16 +1200,106 @@ fn absorbed_descendant_is_unregistered_from_lazy_loaded_paths() {
 
             // Add the ancestor. `a` should be absorbed and its lazy-loaded
             // registration should be cleaned up.
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_root_directories(vec![a.clone(), tree.clone()], ctx);
             });
 
+            wait_for_explorer_io(&mut app).await;
             file_tree_view.read(&app, |view, _ctx| {
                 assert!(!view.registered_lazy_loaded_paths.contains(&std_path(&a)));
                 assert!(view.registered_lazy_loaded_paths.contains(&std_path(&tree)));
             });
             repository_metadata_model.read(&app, |model, ctx| {
                 assert!(!model.is_lazy_loaded_path(&std_path(&a), ctx));
+            });
+        });
+    });
+}
+
+#[test]
+fn empty_and_unavailable_contexts_render_recovery_instead_of_loading() {
+    use twarpui::View as _;
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let (_, tree) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+        tree.read(&app, |view, ctx| {
+            let text = view.render(ctx).debug_text_content().unwrap();
+            assert!(text.contains("No folder selected"));
+        });
+        tree.update(&mut app, |view, ctx| {
+            view.set_project_context_error(
+                Some("The folder /missing/project is unavailable.".to_owned()),
+                ctx,
+            );
+        });
+        tree.read(&app, |view, ctx| {
+            let text = view.render(ctx).debug_text_content().unwrap();
+            assert!(text.contains("Project folder unavailable"));
+            assert!(text.contains("/missing/project"));
+        });
+    });
+}
+
+#[test]
+fn unrelated_repository_completion_does_not_rebuild_the_displayed_tree() {
+    VirtualFS::test("file_tree_unrelated_repo", |dirs, mut fs| {
+        fs.mkdir("tree")
+            .with_files(vec![Stub::FileWithContent("tree/file.txt", "hello")]);
+        let root = dirs.tests().join("tree");
+        App::test((), |mut app| async move {
+            initialize_app(&mut app);
+            let (_, tree) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+            tree.update(&mut app, |view, ctx| {
+                view.set_is_active(true, ctx);
+                view.set_root_directories(vec![root.clone()], ctx);
+            });
+            wait_for_explorer_io(&mut app).await;
+            tree.update(&mut app, |view, ctx| {
+                let before = view.root_directories[&std_path(&root)].items.as_ptr();
+                view.handle_repository_metadata_event(
+                    &repo_metadata::RepoMetadataEvent::RepositoryUpdated {
+                        id: repo_metadata::RepositoryIdentifier::local(std_path(
+                            &dirs.tests().join("elsewhere"),
+                        )),
+                    },
+                    ctx,
+                );
+                assert_eq!(
+                    view.root_directories[&std_path(&root)].items.as_ptr(),
+                    before
+                );
+            });
+        });
+    });
+}
+
+#[test]
+fn reopening_preserves_cached_rows_until_background_refresh_finishes() {
+    VirtualFS::test("file_tree_reopen_cached_rows", |dirs, mut fs| {
+        fs.mkdir("tree")
+            .with_files(vec![Stub::FileWithContent("tree/file.txt", "hello")]);
+        let root = dirs.tests().join("tree");
+        App::test((), |mut app| async move {
+            initialize_app(&mut app);
+            let (_, tree) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+            tree.update(&mut app, |view, ctx| {
+                view.set_is_active(true, ctx);
+                view.set_root_directories(vec![root.clone()], ctx);
+            });
+            wait_for_explorer_io(&mut app).await;
+            tree.update(&mut app, |view, ctx| {
+                let before = view.root_directories[&std_path(&root)].items.as_ptr();
+                view.set_is_active(false, ctx);
+                view.set_is_active(true, ctx);
+                assert_eq!(
+                    view.root_directories[&std_path(&root)].items.as_ptr(),
+                    before
+                );
+            });
+            wait_for_explorer_io(&mut app).await;
+            tree.read(&app, |view, _| {
+                assert!(flattened_paths(view, &root).contains(&std_path(&root.join("file.txt"))));
             });
         });
     });

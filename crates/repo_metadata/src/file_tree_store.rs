@@ -18,6 +18,12 @@ pub struct FileTreeEntry {
 }
 
 impl FileTreeEntry {
+    /// Whether two snapshots still refer to the same immutable tree revision.
+    #[cfg(feature = "local_fs")]
+    pub fn shares_storage_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state_map, &other.state_map)
+    }
+
     pub fn ignored(&self, path: &StandardizedPath) -> bool {
         let Some(entry_state) = self.state_map.get(path) else {
             return false;

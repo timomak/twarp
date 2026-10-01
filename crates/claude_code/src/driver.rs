@@ -234,6 +234,9 @@ pub struct SpawnOptions {
     /// stream (see the #74 notes), so the pane treats it as write-only.
     pub effort: Option<String>,
     pub resume_session_id: Option<String>,
+    /// Claude-only transcript location when resuming a relocated checkout.
+    /// The UUID above remains the session identity for both providers.
+    pub resume_transcript_path: Option<PathBuf>,
     /// Pin a fresh session's id (`--session-id`, PRODUCT §41): the pane owns
     /// its session identity from birth, so the raw-CLI toggle and mode
     /// restarts never hit a "no id yet" window. Ignored when resuming —
@@ -332,7 +335,12 @@ fn spawn_claude_session(opts: SpawnOptions) -> Result<SpawnedSession> {
         cmd.arg("--effort").arg(effort);
     }
     if let Some(id) = &opts.resume_session_id {
-        cmd.arg("--resume").arg(id);
+        cmd.arg("--resume");
+        if let Some(path) = &opts.resume_transcript_path {
+            cmd.arg(path);
+        } else {
+            cmd.arg(id);
+        }
     } else if let Some(id) = &opts.session_id {
         // A fresh session under a pane-chosen id (PRODUCT §41).
         cmd.arg("--session-id").arg(id);

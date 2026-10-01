@@ -111,6 +111,9 @@ pub struct WorkingDirectoriesModel {
     /// pure function of these inputs, so we skip the recompute when they are
     /// identical to the previous run. Cleared in `handle_empty_pane_group`.
     last_refresh_inputs: HashMap<EntityId, RefreshInputsSignature>,
+    /// Tool context is independent of session identity. Global pages and PRs can
+    /// display a local checkout without rewriting a terminal's working directory.
+    project_context: HashMap<EntityId, (IndexSet<PathBuf>, IndexSet<PathBuf>)>,
 }
 
 /// Cheap, fs-free signature of the inputs to
@@ -155,7 +158,10 @@ impl WorkingDirectoriesModel {
         &self,
         pane_group_id: EntityId,
     ) -> Option<&IndexSet<PathBuf>> {
-        self.pane_groups.get(&pane_group_id)
+        self.project_context
+            .get(&pane_group_id)
+            .map(|context| &context.0)
+            .or_else(|| self.pane_groups.get(&pane_group_id))
     }
 
     /// Get the unique directories for a specific pane group in most to least recently added order.
@@ -177,7 +183,10 @@ impl WorkingDirectoriesModel {
         &self,
         pane_group_id: EntityId,
     ) -> Option<&IndexSet<PathBuf>> {
-        self.repository_roots.get(&pane_group_id)
+        self.project_context
+            .get(&pane_group_id)
+            .map(|context| &context.1)
+            .or_else(|| self.repository_roots.get(&pane_group_id))
     }
 
     /// Get the unique repository roots for a specific pane group in most to least recently added order.
@@ -200,9 +209,47 @@ impl WorkingDirectoriesModel {
             .and_then(|roots| roots.get(root_path).copied())
     }
 
-    #[cfg(test)]
     pub fn focused_repo_for_pane_group(&self, pane_group_id: EntityId) -> Option<PathBuf> {
+        if let Some((_, repositories)) = self.project_context.get(&pane_group_id) {
+            return repositories.first().cloned();
+        }
         self.focused_repo.get(&pane_group_id).cloned().flatten()
+    }
+
+    pub(crate) fn set_project_context(
+        &mut self,
+        pane_group_id: EntityId,
+        context: Option<(Option<PathBuf>, Option<PathBuf>)>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let context = context.map(|(directory, repository)| {
+            (
+                directory.into_iter().collect(),
+                repository.into_iter().collect(),
+            )
+        });
+        if self.project_context.get(&pane_group_id) == context.as_ref() {
+            return;
+        }
+        let previous_repositories = self
+            .project_context
+            .get(&pane_group_id)
+            .map(|(_, roots)| roots.clone())
+            .unwrap_or_default();
+        if let Some(context) = context {
+            self.project_context.insert(pane_group_id, context);
+        } else {
+            self.project_context.remove(&pane_group_id);
+        }
+        self.remove_inactive_code_reviews(pane_group_id);
+        self.drop_unused_diff_state_models(previous_repositories.into_iter(), ctx);
+        self.emit_directories_changed(pane_group_id, ctx);
+        self.emit_repositories_changed(pane_group_id, ctx);
+        self.emit_focused_repo_changed(
+            pane_group_id,
+            self.focused_repo_for_pane_group(pane_group_id),
+            ctx,
+        );
     }
 
     /// Get or create a DiffStateModel for a specific repository.
@@ -238,6 +285,10 @@ impl WorkingDirectoriesModel {
                 .repository_roots
                 .values()
                 .all(|tab| !tab.contains(&repo_path))
+                && self
+                    .project_context
+                    .values()
+                    .all(|(_, roots)| !roots.contains(&repo_path))
             {
                 if let Some(model) = self.diff_state_models.remove(&repo_path) {
                     model.update(ctx, |model, ctx| {
@@ -293,7 +344,11 @@ impl WorkingDirectoriesModel {
             return;
         };
 
-        let repository_roots = self.repository_roots.get(&pane_group_id);
+        let repository_roots = self
+            .project_context
+            .get(&pane_group_id)
+            .map(|(_, roots)| roots)
+            .or_else(|| self.repository_roots.get(&pane_group_id));
         let terminal_mapping = self.directory_to_terminal.get(&pane_group_id);
         if repository_roots.is_none() && terminal_mapping.is_none() {
             return;
@@ -399,8 +454,12 @@ impl WorkingDirectoriesModel {
     /// as opposed to handle_empty_pane_group which is called when working directories
     /// become empty but the pane group still exists (e.g., settings page).
     pub fn remove_pane_group(&mut self, pane_group_id: EntityId, ctx: &mut ModelContext<Self>) {
+        let context = self.project_context.remove(&pane_group_id);
         // Clean up directories, terminals, and repos (emits events for subscribers)
         self.handle_empty_pane_group(pane_group_id, ctx);
+        if let Some((_, repositories)) = context {
+            self.drop_unused_diff_state_models(repositories.into_iter(), ctx);
+        }
 
         // Clean up views that should persist in handle_empty_pane_group e.g. there's only a settings pane in the pane group
         // but need to be removed when the pane group is destroyed
@@ -425,23 +484,13 @@ impl WorkingDirectoriesModel {
         }
 
         if did_remove_dirs {
-            ctx.emit(WorkingDirectoriesEvent::DirectoriesChanged {
-                pane_group_id,
-                directories: vec![],
-            });
+            self.emit_directories_changed(pane_group_id, ctx);
         }
         if did_remove_repos {
-            ctx.emit(WorkingDirectoriesEvent::RepositoriesChanged {
-                pane_group_id,
-                repositories: vec![],
-            });
+            self.emit_repositories_changed(pane_group_id, ctx);
         }
         if did_remove_terminals {
-            ctx.emit(WorkingDirectoriesEvent::FocusedRepoChanged {
-                pane_group_id,
-                repository_terminal_map: HashMap::new(),
-                focused_repo: None,
-            });
+            self.emit_focused_repo_changed(pane_group_id, None, ctx);
         }
     }
 
@@ -707,6 +756,11 @@ impl WorkingDirectoriesModel {
         focused_repo: Option<PathBuf>,
         ctx: &mut ModelContext<Self>,
     ) {
+        let focused_repo = self
+            .project_context
+            .get(&pane_group_id)
+            .map(|(_, repositories)| repositories.first().cloned())
+            .unwrap_or(focused_repo);
         ctx.emit(WorkingDirectoriesEvent::FocusedRepoChanged {
             pane_group_id,
             repository_terminal_map: self

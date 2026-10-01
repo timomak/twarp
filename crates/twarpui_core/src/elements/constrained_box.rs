@@ -13,6 +13,7 @@ use pathfinder_geometry::vector::Vector2F;
 pub struct ConstrainedBox {
     child: Box<dyn Element>,
     constraint: SizeConstraint,
+    use_window_size: bool,
 }
 
 impl ConstrainedBox {
@@ -23,7 +24,19 @@ impl ConstrainedBox {
                 min: Vector2F::zero(),
                 max: Vector2F::splat(f32::INFINITY),
             },
+            use_window_size: false,
         }
+    }
+
+    /// Fill the current window viewport, respecting a smaller parent constraint.
+    ///
+    /// The viewport is read during layout, so it follows window resizing without
+    /// needing this element to be rebuilt. LayoutContext already accounts for
+    /// the application's zoom factor. This also bounds intrinsic measuring
+    /// passes that would otherwise pass infinity into a full-window shell.
+    pub fn with_window_size(mut self) -> Self {
+        self.use_window_size = true;
+        self
     }
 
     pub fn with_max_width(mut self, max_width: f32) -> Self {
@@ -66,6 +79,10 @@ impl Element for ConstrainedBox {
         ctx: &mut LayoutContext,
         app: &AppContext,
     ) -> Vector2F {
+        if self.use_window_size {
+            let size = constraint.max.min(ctx.window_size).max(Vector2F::zero());
+            constraint = SizeConstraint::new(size, size);
+        }
         constraint.min = constraint.min.max(self.constraint.min);
         constraint.max = constraint.max.min(self.constraint.max);
         constraint.min = constraint.min.min(constraint.max);
@@ -107,6 +124,10 @@ impl Element for ConstrainedBox {
         self.child.debug_text_content()
     }
 }
+
+#[cfg(test)]
+#[path = "constrained_box_tests.rs"]
+mod tests;
 
 impl SelectableElement for ConstrainedBox {
     fn get_selection(

@@ -7,6 +7,34 @@ use twarpui::App;
 use virtual_fs::{Stub, VirtualFS};
 
 #[test]
+fn cached_repository_lookup_resolves_missing_paths_without_filesystem_access() {
+    VirtualFS::test("cached_repository_lookup", |dirs, _vfs| {
+        let parent = dirs.tests().join("uncreated_parent");
+        let nested = parent.join("nested");
+        let mut repositories = DetectedRepositories::default();
+        repositories.insert_test_repo_root(StandardizedPath::try_from_local(&parent).unwrap());
+        repositories.insert_test_repo_root(StandardizedPath::try_from_local(&nested).unwrap());
+
+        assert_eq!(
+            repositories.get_cached_root_for_path(&nested.join("missing_child")),
+            Some(nested)
+        );
+        assert_eq!(
+            repositories.get_cached_root_for_path(&parent.join("other/../missing_child")),
+            Some(parent)
+        );
+        assert_eq!(
+            repositories.get_cached_root_for_path(&dirs.tests().join("unrelated")),
+            None
+        );
+        assert_eq!(
+            repositories.get_cached_root_for_path(std::path::Path::new("relative/path")),
+            None
+        );
+    });
+}
+
+#[test]
 fn test_detect_possible_git_repo_non_existent_directory() {
     VirtualFS::test("detect_non_existent", |dirs, _vfs| {
         let non_existent_path = dirs.tests().join("non_existent_directory");

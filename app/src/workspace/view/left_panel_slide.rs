@@ -8,13 +8,13 @@
 //! paths assign visibility directly and never create a [`PanelSlide`], so
 //! restored panels appear at full width instantly.
 
-use std::time::Duration;
+use std::{rc::Rc, time::Duration};
 
 use instant::Instant;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use twarpui::{
     elements::Point, event::DispatchedEvent, AfterLayoutContext, AppContext, ClipBounds, Element,
-    EventContext, LayoutContext, PaintContext, SizeConstraint,
+    EventContext, LayoutContext, PaintContext, SizeConstraint, View, ViewContext,
 };
 
 /// Total duration of a side-rail slide.
@@ -36,6 +36,7 @@ pub(super) struct PanelSlide {
     started_at: Instant,
     from: f32,
     to: f32,
+    lifetime: Rc<()>,
 }
 
 impl PanelSlide {
@@ -44,7 +45,27 @@ impl PanelSlide {
             started_at: Instant::now(),
             from,
             to,
+            lifetime: Rc::new(()),
         }
+    }
+
+    /// A queued tick belongs only to this transition. Reversing or cancelling
+    /// the animation drops its token, so old callbacks cannot rearm a second
+    /// timer chain against the replacement slide.
+    pub(super) fn schedule_tick<T: View>(
+        &self,
+        ctx: &mut ViewContext<T>,
+        callback: impl FnOnce(&mut T, &mut ViewContext<T>) + 'static,
+    ) -> twarpui::r#async::SpawnedFutureHandle {
+        let lifetime = Rc::downgrade(&self.lifetime);
+        ctx.spawn(
+            twarpui::r#async::Timer::after(PANEL_SLIDE_TICK),
+            move |view, _, ctx| {
+                if lifetime.upgrade().is_some() {
+                    callback(view, ctx);
+                }
+            },
+        )
     }
 
     /// Current visible fraction of the panel width, eased.

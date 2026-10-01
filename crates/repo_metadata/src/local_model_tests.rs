@@ -30,6 +30,8 @@ mod tests {
                 repositories: HashMap::new(),
                 lazy_loaded_paths: Default::default(),
                 #[cfg(feature = "local_fs")]
+                lazy_loading: Default::default(),
+                #[cfg(feature = "local_fs")]
                 watcher: Default::default(),
                 emit_incremental_updates: false,
             }

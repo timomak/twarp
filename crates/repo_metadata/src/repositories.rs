@@ -180,10 +180,20 @@ impl DetectedRepositories {
         DirectoryWatcher::as_ref(ctx).get_watched_directory_for_path(&root)
     }
 
-    /// Given a path, return its corresponding repo root. Note that this does not run the check
-    /// against the actual file system. Instead it checks against our cached path to root mapping.
+    /// Canonicalize a local path and return its cached repository root.
+    /// This resolves symlinks and performs filesystem I/O. UI callers with
+    /// normalized paths should use [`Self::get_cached_root_for_path`] instead.
     pub fn get_root_for_path(&self, path: &Path) -> Option<PathBuf> {
         let std_path = StandardizedPath::from_local_canonicalized(path).ok()?;
+        let repo = self.find_repository_root(&std_path)?;
+        repo.to_local_path()
+    }
+
+    /// Find the closest cached root without accessing the filesystem. Missing
+    /// paths remain resolvable, but symlink aliases must first be canonicalized
+    /// by the caller off the UI thread.
+    pub fn get_cached_root_for_path(&self, path: &Path) -> Option<PathBuf> {
+        let std_path = StandardizedPath::try_from_local(path).ok()?;
         let repo = self.find_repository_root(&std_path)?;
         repo.to_local_path()
     }

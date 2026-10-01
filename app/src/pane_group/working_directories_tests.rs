@@ -10,6 +10,92 @@ use twarpui::{App, EntityId};
 use crate::pane_group::WorkingDirectoriesModel;
 
 #[test]
+fn project_tool_context_survives_empty_global_page_refresh_and_is_window_local() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let model = app.add_model(|_| WorkingDirectoriesModel::new());
+        let global = EntityId::new();
+        let other = EntityId::new();
+        model.update(&mut app, |model, ctx| {
+            model.set_project_context(
+                global,
+                Some((Some("/chosen".into()), Some("/chosen".into()))),
+                ctx,
+            );
+            model.set_project_context(
+                other,
+                Some((Some("/other".into()), Some("/other".into()))),
+                ctx,
+            );
+            model.refresh_working_directories_for_pane_group(
+                global,
+                vec![],
+                vec![],
+                vec![],
+                None,
+                None,
+                ctx,
+            );
+            let paths: Vec<_> = model
+                .most_recent_directories_for_pane_group(global)
+                .unwrap()
+                .map(|directory| directory.path)
+                .collect();
+            assert_eq!(paths, vec![PathBuf::from("/chosen")]);
+            assert_eq!(
+                model.focused_repo_for_pane_group(global),
+                Some("/chosen".into())
+            );
+            assert_eq!(
+                model.focused_repo_for_pane_group(other),
+                Some("/other".into())
+            );
+            model.remove_pane_group(global, ctx);
+            assert!(model
+                .most_recent_directories_for_pane_group(global)
+                .is_none());
+        });
+    });
+}
+
+#[test]
+fn clearing_tool_context_restores_session_directories_without_rewriting_them() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let directory = tempfile::TempDir::new().unwrap();
+        let canonical = dunce::canonicalize(directory.path()).unwrap();
+        let model = app.add_model(|_| WorkingDirectoriesModel::new());
+        let group = EntityId::new();
+        model.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                group,
+                vec![(EntityId::new(), canonical.display().to_string())],
+                vec![],
+                vec![],
+                None,
+                None,
+                ctx,
+            );
+            model.set_project_context(group, Some((None, None)), ctx);
+            assert_eq!(
+                model
+                    .most_recent_directories_for_pane_group(group)
+                    .unwrap()
+                    .count(),
+                0
+            );
+            model.set_project_context(group, None, ctx);
+            let paths: Vec<_> = model
+                .most_recent_directories_for_pane_group(group)
+                .unwrap()
+                .map(|directory| directory.path)
+                .collect();
+            assert_eq!(paths, vec![canonical]);
+        });
+    });
+}
+
+#[test]
 fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
     App::test((), |mut app| async move {
         let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());

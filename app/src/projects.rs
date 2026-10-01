@@ -1,10 +1,11 @@
 use std::sync::mpsc::SyncSender;
 use std::{
-    collections::{hash_map::Entry, HashMap},
-    path::PathBuf,
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+    path::{Component, Path, PathBuf},
 };
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use twarpui::{Entity, ModelContext, SingletonEntity};
 
 pub(crate) use crate::persistence::model::Project;
@@ -26,8 +27,73 @@ pub enum ProjectEvent {
     },
 }
 
+const DIRECTORY_REPLACEMENTS_KEY: &str = "ProjectDirectoryReplacements";
+
+/// Explicit mappings belong to this machine's private preferences, separate
+/// from project identities and provider session/history paths.
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+struct DirectoryReplacements(BTreeMap<PathBuf, PathBuf>);
+
+impl DirectoryReplacements {
+    fn resolve(&self, path: &Path) -> Result<PathBuf, String> {
+        let mut resolved = path.to_path_buf();
+        let mut visited = HashSet::new();
+        loop {
+            let Some((original, replacement)) = self
+                .0
+                .iter()
+                .filter(|(original, _)| resolved.starts_with(original))
+                .max_by_key(|(original, _)| original.components().count())
+            else {
+                return Ok(resolved);
+            };
+            if !visited.insert(original) {
+                return Err(
+                    "Folder replacements cannot form a cycle or contain themselves.".to_owned(),
+                );
+            }
+            let suffix = resolved
+                .strip_prefix(original)
+                .expect("matched directory prefix");
+            resolved = replacement.join(suffix);
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        for (original, replacement) in &self.0 {
+            if !original.is_absolute()
+                || !replacement.is_absolute()
+                || original
+                    .components()
+                    .chain(replacement.components())
+                    .any(|part| matches!(part, Component::ParentDir))
+            {
+                return Err(
+                    "Folder replacements require absolute paths without parent components."
+                        .to_owned(),
+                );
+            }
+            self.resolve(original)?;
+        }
+        Ok(())
+    }
+
+    fn with_relocation(&self, original: PathBuf, replacement: PathBuf) -> Result<Self, String> {
+        let mut updated = self.clone();
+        if original == replacement {
+            updated.0.remove(&original);
+        } else {
+            updated.0.insert(original, replacement);
+        }
+        updated.validate()?;
+        Ok(updated)
+    }
+}
+
 pub struct ProjectManagementModel {
     projects: HashMap<PathBuf, Project>,
+    directory_replacements: DirectoryReplacements,
     model_event_sender: Option<SyncSender<ModelEvent>>,
 }
 
@@ -53,7 +119,7 @@ impl ProjectManagementModel {
     pub fn new(
         persisted_projects: Vec<Project>,
         model_event_sender: Option<SyncSender<ModelEvent>>,
-        _ctx: &mut ModelContext<Self>,
+        ctx: &mut ModelContext<Self>,
     ) -> Self {
         log::debug!("Loading {} persisted projects", persisted_projects.len());
 
@@ -74,10 +140,57 @@ impl ProjectManagementModel {
             }
         }
 
+        let directory_replacements = settings::PrivatePreferences::as_ref(ctx)
+            .read_value(DIRECTORY_REPLACEMENTS_KEY)
+            .map_err(|error| error.to_string())
+            .and_then(|value| {
+                let replacements: DirectoryReplacements = value
+                    .map(|value| serde_json::from_str(&value))
+                    .transpose()
+                    .map_err(|error| error.to_string())?
+                    .unwrap_or_default();
+                replacements.validate()?;
+                Ok(replacements)
+            })
+            .unwrap_or_else(|error| {
+                log::warn!("Could not load local folder replacements: {error}");
+                DirectoryReplacements::default()
+            });
         Self {
             projects,
+            directory_replacements,
             model_event_sender,
         }
+    }
+
+    /// Resolve only explicit replacements. This is lexical and performs no
+    /// filesystem work, so it is safe while rendering or reconciling context.
+    pub fn resolve_directory(&self, path: &Path) -> PathBuf {
+        self.directory_replacements
+            .resolve(path)
+            .unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    /// Remember a user-selected local replacement after the caller validates
+    /// it off the UI thread. Project identity and session history are unchanged.
+    pub fn relocate_directory(
+        &mut self,
+        original: PathBuf,
+        replacement: PathBuf,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<(), String> {
+        let updated = self
+            .directory_replacements
+            .with_relocation(original.clone(), replacement)?;
+        let serialized = serde_json::to_string(&updated)
+            .map_err(|error| format!("Could not save the folder replacement: {error}"))?;
+        settings::PrivatePreferences::as_ref(ctx)
+            .write_value(DIRECTORY_REPLACEMENTS_KEY, serialized)
+            .map_err(|error| format!("Could not save the folder replacement: {error}"))?;
+        self.directory_replacements = updated;
+        ctx.emit(ProjectEvent::Updated { path: original });
+        ctx.notify();
+        Ok(())
     }
 
     /// Add a project to the list. If it already exists, update the last_opened_ts.

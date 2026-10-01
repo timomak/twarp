@@ -19,7 +19,7 @@ use twarpui::{
     },
     platform::Cursor,
     prelude::ColorU,
-    AppContext, SingletonEntity, ViewContext, ViewHandle,
+    AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
@@ -44,11 +44,13 @@ pub(crate) const CONTENT_MAX_WIDTH: f32 = 720.;
 pub enum PullRequestsPageAction {
     /// Select a repo by project-root path (dropdown payload).
     SelectRepo(String),
+    ChooseRepo,
     /// Set the state filter by [`PrStateFilter::as_str`] payload.
     SetFilter(String),
     /// Narrow the list to one author login (empty payload = all authors).
     SetAuthorFilter(String),
     Refresh,
+    LocateProjectDirectory,
     /// Row click: open the native in-page detail view for this PR (21b).
     OpenDetail(u64),
     /// Open the PR in the OS browser (the row's trailing affordance).
@@ -124,6 +126,8 @@ struct RowMouseStates {
 }
 
 pub struct PullRequestsPageState {
+    store: ModelHandle<PullRequestsStoreModel>,
+    selected_repo: Option<PathBuf>,
     scroll_state: ClippedScrollStateHandle,
     repo_dropdown: Option<ViewHandle<Dropdown<AutomationViewAction>>>,
     /// Author narrowing; only shown once the fetched list has ≥ 2 authors.
@@ -133,6 +137,7 @@ pub struct PullRequestsPageState {
     /// Dedicated handle for the empty state's CTA (a view handle cannot be
     /// mounted in two places at once).
     empty_refresh_button: ViewHandle<ActionButton>,
+    locate_folder_button: ViewHandle<ActionButton>,
     rows: RefCell<HashMap<u64, RowMouseStates>>,
     /// The open in-page detail view, if a row was clicked (21b). Not
     /// persisted: after a restart the page reopens on the list.
@@ -140,16 +145,29 @@ pub struct PullRequestsPageState {
 }
 
 impl PullRequestsPageState {
-    pub fn new(ctx: &mut ViewContext<AutomationView>) -> Self {
+    pub fn new(
+        store: ModelHandle<PullRequestsStoreModel>,
+        ctx: &mut ViewContext<AutomationView>,
+    ) -> Self {
         let refresh_button = new_refresh_button("Refresh", ctx);
         let empty_refresh_button = new_refresh_button("Refresh", ctx);
+        let locate_folder_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Locate folder", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AutomationViewAction::PullRequests(
+                    PullRequestsPageAction::LocateProjectDirectory,
+                ));
+            })
+        });
         let mut state = Self {
+            store,
+            selected_repo: None,
             scroll_state: Default::default(),
             repo_dropdown: None,
             author_dropdown: None,
             filter_dropdown: new_filter_dropdown(PrStateFilter::default(), ctx),
             refresh_button,
             empty_refresh_button,
+            locate_folder_button,
             rows: Default::default(),
             detail: None,
         };
@@ -161,7 +179,7 @@ impl PullRequestsPageState {
     /// filter all change out from under the page).
     pub fn sync(&mut self, ctx: &mut ViewContext<AutomationView>) {
         let (projects, selected, filter, authors, author_filter) = {
-            let store = PullRequestsStoreModel::as_ref(ctx);
+            let store = self.store.as_ref(ctx);
             (
                 store.projects().to_vec(),
                 store.selected_repo().map(Path::to_path_buf),
@@ -170,19 +188,32 @@ impl PullRequestsPageState {
                 store.author_filter().map(str::to_owned),
             )
         };
+        if self.selected_repo != selected {
+            self.detail = None;
+            self.rows.borrow_mut().clear();
+            self.scroll_state = Default::default();
+            self.selected_repo = selected.clone();
+        }
         self.repo_dropdown = (!projects.is_empty()).then(|| {
             let selected = selected.clone();
             ctx.add_typed_action_view(|ctx| {
                 let mut dropdown = Dropdown::new(ctx);
-                dropdown.set_items(
+                let placeholder =
+                    AutomationViewAction::PullRequests(PullRequestsPageAction::ChooseRepo);
+                let mut items = Vec::new();
+                if selected.is_none() {
+                    items.push(DropdownItem::new("Choose a project", placeholder.clone()));
+                }
+                items.extend(
                     projects
                         .iter()
-                        .map(|path| DropdownItem::new(project_label(path), repo_action(path)))
-                        .collect(),
-                    ctx,
+                        .map(|path| DropdownItem::new(project_label(path), repo_action(path))),
                 );
+                dropdown.set_items(items, ctx);
                 if let Some(selected) = &selected {
                     dropdown.set_selected_by_action(repo_action(selected), ctx);
+                } else {
+                    dropdown.set_selected_by_action(placeholder, ctx);
                 }
                 dropdown.set_top_bar_max_width(220.);
                 dropdown
@@ -206,34 +237,38 @@ impl PullRequestsPageState {
     ) {
         use PullRequestsPageAction::*;
         match action {
+            ChooseRepo => {}
             SelectRepo(path) => {
                 // Changing repos invalidates the open detail — back to list.
                 self.close_detail(ctx);
                 let path = PathBuf::from(path);
-                PullRequestsStoreModel::handle(ctx)
+                self.store
                     .update(ctx, |store, ctx| store.select_repo(path, ctx));
                 self.sync(ctx);
             }
             SetFilter(value) => {
                 if let Some(filter) = PrStateFilter::from_str(value) {
-                    PullRequestsStoreModel::handle(ctx)
+                    self.store
                         .update(ctx, |store, ctx| store.set_filter(filter, ctx));
                     self.sync(ctx);
                 }
             }
             SetAuthorFilter(author) => {
                 let author = (!author.is_empty()).then(|| author.clone());
-                PullRequestsStoreModel::handle(ctx)
+                self.store
                     .update(ctx, |store, ctx| store.set_author_filter(author, ctx));
                 self.sync(ctx);
             }
             Refresh => {
-                PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| store.refresh(ctx));
+                ctx.dispatch_typed_action(&WorkspaceAction::RefreshPullRequests);
+            }
+            LocateProjectDirectory => {
+                ctx.dispatch_typed_action(&WorkspaceAction::LocateProjectDirectory);
             }
             OpenDetail(number) => {
                 let number = *number;
-                self.detail = Some(PrDetailState::new(number, ctx));
-                PullRequestsStoreModel::handle(ctx)
+                self.detail = Some(PrDetailState::new(number, self.store.clone(), ctx));
+                self.store
                     .update(ctx, |store, ctx| store.fetch_detail(number, ctx));
             }
             BackToList => self.close_detail(ctx),
@@ -255,7 +290,7 @@ impl PullRequestsPageState {
     /// Drop the open detail view (and its cached data in the store).
     fn close_detail(&mut self, ctx: &mut ViewContext<AutomationView>) {
         if self.detail.take().is_some() {
-            PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| store.close_detail(ctx));
+            self.store.update(ctx, |store, ctx| store.close_detail(ctx));
         }
     }
 
@@ -265,7 +300,7 @@ impl PullRequestsPageState {
         }
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let store = PullRequestsStoreModel::as_ref(app);
+        let store = self.store.as_ref(app);
         let sub = theme.sub_text_color(theme.background());
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
@@ -322,13 +357,21 @@ impl PullRequestsPageState {
         if store.selected_repo().is_none() {
             column.add_child(crate::automation::render_empty_state(
                 Icon::GitPullRequest,
-                "No project open",
-                "Open a project with a GitHub remote to see its pull requests here.",
+                if store.projects().is_empty() { "No repository available" } else { "Choose a project" },
+                if store.projects().is_empty() {
+                    "Open a local repository in a session or add a project to see its pull requests."
+                } else {
+                    "Select a repository from the project picker above."
+                },
                 &self.empty_refresh_button,
                 app,
             ));
         } else if let Some(error) = data.and_then(|data| data.error.as_deref()) {
-            column.add_child(self.render_error(error, app));
+            column.add_child(self.render_error(
+                error,
+                data.is_some_and(|data| data.directory_unavailable),
+                app,
+            ));
         } else if data.is_none_or(|data| !data.fetched) {
             column.add_child(
                 Container::new(
@@ -345,10 +388,11 @@ impl PullRequestsPageState {
                 .finish(),
             );
         } else if data.is_some_and(|data| {
-            !data
-                .prs
-                .iter()
-                .any(|pr| store.author_filter().is_none_or(|author| pr.author == author))
+            !data.prs.iter().any(|pr| {
+                store
+                    .author_filter()
+                    .is_none_or(|author| pr.author == author)
+            })
         }) {
             column.add_child(crate::automation::render_empty_state(
                 Icon::GitPullRequest,
@@ -372,7 +416,11 @@ impl PullRequestsPageState {
             let filtered: Vec<crate::pull_requests::store::PrEntry> = data
                 .prs
                 .iter()
-                .filter(|pr| store.author_filter().is_none_or(|author| pr.author == author))
+                .filter(|pr| {
+                    store
+                        .author_filter()
+                        .is_none_or(|author| pr.author == author)
+                })
                 .cloned()
                 .collect();
             let (needs_review, yours, others) = group_prs(&filtered, store.viewer());
@@ -430,25 +478,35 @@ impl PullRequestsPageState {
             .finish()
     }
 
-    /// Page-level error card: gh missing, non-GitHub origin, auth failures.
-    fn render_error(&self, error: &str, app: &AppContext) -> Box<dyn Element> {
+    /// Page-level error with a folder recovery action when local context is unavailable.
+    fn render_error(
+        &self,
+        error: &str,
+        directory_unavailable: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        Container::new(
-            Text::new(
-                format!("Couldn't load pull requests: {error}"),
-                appearance.ui_font_family(),
-                type_ramp::UI.size,
-            )
-            .with_line_height_ratio(type_ramp::UI.line_height)
-            .with_color(theme.ui_error_color())
-            .finish(),
-        )
-        .with_uniform_padding(spacing::LG)
-        .with_margin_top(spacing::MD)
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
-        .finish()
+        let mut content = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_spacing(spacing::MD)
+            .with_child(
+                Text::new(
+                    format!("Couldn't load pull requests: {error}"),
+                    appearance.ui_font_family(),
+                    type_ramp::UI.size,
+                )
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_color(theme.ui_error_color())
+                .finish(),
+            );
+        if directory_unavailable {
+            content.add_child(ChildView::new(&self.locate_folder_button).finish());
+        }
+        Container::new(content.finish())
+            .with_uniform_padding(spacing::LG)
+            .with_margin_top(spacing::MD)
+            .finish()
     }
 
     /// One PR row: CI dot, title + author/updated/branch, badges, and a
@@ -644,13 +702,16 @@ fn new_author_dropdown(
             author.to_owned(),
         ))
     };
-    let items = std::iter::once(DropdownItem::new("All authors".to_owned(), author_action("")))
-        .chain(
-            authors
-                .iter()
-                .map(|author| DropdownItem::new(author.clone(), author_action(author))),
-        )
-        .collect();
+    let items = std::iter::once(DropdownItem::new(
+        "All authors".to_owned(),
+        author_action(""),
+    ))
+    .chain(
+        authors
+            .iter()
+            .map(|author| DropdownItem::new(author.clone(), author_action(author))),
+    )
+    .collect();
     let selected_action = author_action(selected.unwrap_or(""));
     ctx.add_typed_action_view(|ctx| {
         let mut dropdown = Dropdown::new(ctx);

@@ -56,16 +56,16 @@ use crate::util::openable_file_type::{
     is_binary_file, resolve_file_target_to_open_in_twarp, resolve_file_target_with_editor_choice,
 };
 use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
+use crate::view_components::action_button::{ActionButton, SecondaryTheme};
 use crate::{
     appearance::Appearance,
     menu::{Menu, MenuItem, MenuItemFields},
     server::telemetry::TelemetryEvent,
     ui_components::icons::Icon,
-    view_components::DismissibleToast,
-    workspace::ToastStack,
 };
 use twarp_core::features::FeatureFlag;
 use twarp_core::ui::theme::{color::internal_colors, Fill};
+use twarp_core::ui::tokens::{spacing, type_ramp};
 use twarp_core::HostId;
 use twarpui::ui_components::components::UiComponent;
 
@@ -96,6 +96,8 @@ enum PendingEditKind {
 
 #[derive(Debug, Clone)]
 pub enum FileTreeAction {
+    RetryProjectDirectory,
+    LocateProjectDirectory,
     ItemClicked {
         id: FileTreeIdentifier,
     },
@@ -251,6 +253,9 @@ pub struct FileTreeView {
     root_directories: HashMap<StandardizedPath, RootDirectory>,
     /// The displayed directories
     displayed_directories: Vec<StandardizedPath>,
+    project_context_error: Option<String>,
+    retry_directory_button: ViewHandle<ActionButton>,
+    locate_directory_button: ViewHandle<ActionButton>,
     #[cfg(feature = "local_fs")]
     enablement: CodingPanelEnablementState,
     #[cfg(feature = "local_fs")]
@@ -536,17 +541,14 @@ impl FileTreeView {
                     .cloned()
                     .collect();
 
+                if dirs_to_update.is_empty() {
+                    return;
+                }
+
                 self.update_directory_contents(&dirs_to_update, false, ctx);
 
-                if !dirs_to_update.is_empty() {
-                    self.auto_expand_to_most_recent_directory(ctx);
-                    // If we've been waiting for a cd'd descendant to
-                    // materialize (e.g. the ancestor just finished
-                    // indexing), apply that selection on top of the
-                    // default root-header auto-expand so the cwd-follow
-                    // wins once its item is available.
-                    self.apply_pending_focus_target();
-                }
+                self.auto_expand_to_most_recent_directory(ctx);
+                self.apply_pending_focus_target();
             }
             RepoMetadataEvent::FileTreeEntryUpdated {
                 id: RepositoryIdentifier::Local(std_path),
@@ -571,6 +573,14 @@ impl FileTreeView {
                         }
 
                         for root_path in &root_paths {
+                            let expanded = self.root_directories[root_path]
+                                .expanded_folders
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            for path in expanded {
+                                self.ensure_loaded_path(root_path, &path, ctx);
+                            }
                             self.rebuild_flattened_items_for_root(root_path);
                         }
                         self.apply_pending_focus_target();
@@ -581,7 +591,15 @@ impl FileTreeView {
             RepoMetadataEvent::UpdatingRepositoryFailed {
                 id: RepositoryIdentifier::Local(std_path),
             } => {
-                self.update_directory_contents(std::slice::from_ref(std_path), false, ctx);
+                if self
+                    .displayed_directories
+                    .iter()
+                    .any(|root| root == std_path || root.starts_with(std_path))
+                {
+                    // Preserve the failure until Retry. Re-registering here
+                    // would turn an unreadable directory into an endless loop.
+                    ctx.notify();
+                }
             }
             RepoMetadataEvent::RepositoryUpdated {
                 id: RepositoryIdentifier::Remote(remote_id),
@@ -745,6 +763,17 @@ impl FileTreeView {
         let picker = Self {
             root_directories: HashMap::new(),
             displayed_directories: Vec::new(),
+            project_context_error: None,
+            retry_directory_button: ctx.add_typed_action_view(|_| {
+                ActionButton::new("Retry", SecondaryTheme).on_click(|ctx| {
+                    ctx.dispatch_typed_action(FileTreeAction::RetryProjectDirectory);
+                })
+            }),
+            locate_directory_button: ctx.add_typed_action_view(|_| {
+                ActionButton::new("Locate folder", SecondaryTheme).on_click(|ctx| {
+                    ctx.dispatch_typed_action(FileTreeAction::LocateProjectDirectory);
+                })
+            }),
             #[cfg(feature = "local_fs")]
             enablement: CodingPanelEnablementState::Enabled,
             #[cfg(feature = "local_fs")]
@@ -837,6 +866,11 @@ impl FileTreeView {
         ctx: &mut ViewContext<Self>,
     ) {
         self.expand_ancestors_to_path(repository_root, file_path, ctx);
+        self.pending_focus_target = Some(PendingFocusTarget {
+            root: repository_root.clone(),
+            path: file_path.clone(),
+            scrolled: false,
+        });
 
         // Create a FileTreeIdentifier to search for the file in the specific root
         // We need to find the item first by rebuilding the tree, then looking for it
@@ -1319,6 +1353,68 @@ impl FileTreeView {
         ctx.notify();
     }
 
+    /// Workspace resolution preserves the failed path and supplies recovery
+    /// text instead of silently converting a missing folder into loading.
+    pub fn set_project_context_error(
+        &mut self,
+        error: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.project_context_error != error {
+            self.project_context_error = error;
+            ctx.notify();
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn retry_project_directory(&mut self, ctx: &mut ViewContext<Self>) {
+        let paths = self
+            .displayed_directories
+            .iter()
+            .filter(|path| {
+                !self
+                    .root_directories
+                    .get(*path)
+                    .is_some_and(RootDirectory::is_remote)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for path in &paths {
+            if let Some(root) = self.root_directories.get(path) {
+                let backing_root = (**root.entry.root_directory()).clone();
+                self.repository_metadata_model.update(ctx, |model, ctx| {
+                    model.clear_directory_load_errors(&backing_root, ctx);
+                });
+            }
+            self.remove_lazy_loaded_entry(path, ctx);
+        }
+        self.update_directory_contents(&paths, false, ctx);
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn directory_loading_error(&self, app: &AppContext) -> Option<String> {
+        let model = RepoMetadataModel::as_ref(app);
+        for path in &self.displayed_directories {
+            let Some(root) = self.root_directories.get(path) else {
+                continue;
+            };
+            if root.is_remote() {
+                continue;
+            }
+            let backing_root = root.entry.root_directory();
+            let id = repo_metadata::RepositoryIdentifier::local((**backing_root).clone());
+            if let Some(IndexedRepoState::Failed(error)) = model.repository_state(&id, app) {
+                return Some(format!("Cannot open {}. {error}", path));
+            }
+            for directory in &root.expanded_folders {
+                if let Some(error) = model.directory_load_error(backing_root, directory, app) {
+                    return Some(format!("Cannot read {}. {error}", directory));
+                }
+            }
+        }
+        None
+    }
+
     /// Updates the contents of the directories in the file tree.
     /// Will not add new root directories to the file tree.
     #[cfg(feature = "local_fs")]
@@ -1328,6 +1424,14 @@ impl FileTreeView {
         should_expand_last_directory: bool,
         ctx: &mut ViewContext<Self>,
     ) {
+        let previous_entries: HashMap<_, _> = paths
+            .iter()
+            .filter_map(|path| {
+                self.root_directories
+                    .get(path)
+                    .map(|root| (path.clone(), root.entry.clone()))
+            })
+            .collect();
         for root_path in paths {
             self.root_directories
                 .entry(root_path.clone())
@@ -1340,7 +1444,7 @@ impl FileTreeView {
                 });
             let root_local = root_path.to_local_path_lossy();
             if let Some(repo_root) =
-                DetectedRepositories::as_ref(ctx).get_root_for_path(&root_local)
+                DetectedRepositories::as_ref(ctx).get_cached_root_for_path(&root_local)
             {
                 let repo_entry = {
                     let repo_metadata = RepoMetadataModel::as_ref(ctx);
@@ -1394,17 +1498,27 @@ impl FileTreeView {
         }
 
         // Ensure all expanded folders have their children loaded
-        for root_path in self.displayed_directories.clone() {
-            if let Some(root_dir) = self.root_directories.get(&root_path) {
+        for root_path in paths {
+            if let Some(root_dir) = self.root_directories.get(root_path) {
                 let expanded_folders: Vec<StandardizedPath> =
                     root_dir.expanded_folders.iter().cloned().collect();
                 for folder_path in expanded_folders {
-                    self.ensure_loaded_path(&root_path, &folder_path, ctx);
+                    self.ensure_loaded_path(root_path, &folder_path, ctx);
                 }
             }
         }
 
-        self.rebuild_flattened_items();
+        for path in paths {
+            let changed = self.root_directories.get(path).is_some_and(|root| {
+                root.items.is_empty()
+                    || previous_entries
+                        .get(path)
+                        .is_none_or(|previous| !root.entry.shares_storage_with(previous))
+            });
+            if changed || should_expand_last_directory {
+                self.rebuild_flattened_items_for_root(path);
+            }
+        }
         ctx.notify();
     }
 
@@ -1464,22 +1578,9 @@ impl FileTreeView {
         }
 
         let dir_path = target_item.path().clone();
-        let load_result =
-            self.repository_metadata_model
-                .update(ctx, |model: &mut RepoMetadataModel, ctx| {
-                    model.load_directory(&backing_root, &dir_path, ctx)
-                });
-        if matches!(
-            load_result,
-            Err(repo_metadata::RepoMetadataError::BuildTree(
-                repo_metadata::BuildTreeError::ExceededMaxFileLimit,
-            ))
-        ) {
-            Self::show_exceeded_file_limit_toast(ctx);
-        }
-        if let Err(error) = load_result {
-            log::warn!("Failed to load directory {dir_path}: {error}");
-        }
+        self.repository_metadata_model.update(ctx, |model, ctx| {
+            model.request_load_directory(&backing_root, &dir_path, ctx);
+        });
 
         if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&backing_id, ctx) {
             if let Some(root_dir) = self.root_directories.get_mut(root_path) {
@@ -1605,22 +1706,9 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            let index_result = self
-                .repository_metadata_model
-                .update(ctx, |model: &mut RepoMetadataModel, ctx| {
-                    model.index_lazy_loaded_path(path, ctx)
-                });
-            if matches!(
-                index_result,
-                Err(repo_metadata::RepoMetadataError::BuildTree(
-                    repo_metadata::BuildTreeError::ExceededMaxFileLimit,
-                ))
-            ) {
-                Self::show_exceeded_file_limit_toast(ctx);
-            }
-            if let Err(error) = &index_result {
-                log::warn!("Failed to index lazy-loaded path {path}: {error}");
-            }
+            self.repository_metadata_model.update(ctx, |model, ctx| {
+                model.request_index_lazy_loaded_path(path, ctx);
+            });
             if RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx) {
                 self.registered_lazy_loaded_paths.insert(path.clone());
             }
@@ -1647,17 +1735,6 @@ impl FileTreeView {
 
     fn create_empty_entry(path: &StandardizedPath) -> FileTreeEntry {
         FileTreeEntry::new_for_directory(Arc::new(path.clone()))
-    }
-
-    fn show_exceeded_file_limit_toast(ctx: &mut ViewContext<Self>) {
-        let window_id = ctx.window_id();
-        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::error(String::from(
-                "Folder has too many files to display in the file explorer.",
-            ))
-            .with_object_id("file_tree_exceeded_file_limit".to_string());
-            toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-        });
     }
 
     /// Rebuilds the flattened items list for a single root directory only,
@@ -2874,6 +2951,45 @@ impl FileTreeView {
         .finish()
     }
 
+    fn render_directory_recovery(
+        &self,
+        title: &str,
+        message: String,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let buttons = Flex::row()
+            .with_spacing(spacing::SM)
+            .with_child(ChildView::new(&self.locate_directory_button).finish())
+            .with_child(ChildView::new(&self.retry_directory_button).finish())
+            .finish();
+        let content = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::LG)
+            .with_child(
+                Text::new(
+                    title.to_owned(),
+                    appearance.ui_font_family(),
+                    type_ramp::HEADING.size,
+                )
+                .with_line_height_ratio(type_ramp::HEADING.line_height)
+                .with_color(theme.main_text_color(theme.surface_1()).into())
+                .finish(),
+            )
+            .with_child(
+                Text::new(message, appearance.ui_font_family(), type_ramp::PROSE.size)
+                    .with_line_height_ratio(type_ramp::PROSE.line_height)
+                    .with_color(theme.sub_text_color(theme.surface_1()).into())
+                    .finish(),
+            )
+            .with_child(buttons)
+            .finish();
+        Container::new(Align::new(content).finish())
+            .with_uniform_padding(spacing::LG)
+            .finish()
+    }
+
     fn render_loading_state(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -2982,8 +3098,12 @@ impl FileTreeView {
 }
 
 pub enum FileTreeEvent {
+    RetryProjectDirectory,
+    LocateProjectDirectory,
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    AttachAsContext { path: PathBuf },
+    AttachAsContext {
+        path: PathBuf,
+    },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     OpenFile {
         path: PathBuf,
@@ -2996,11 +3116,17 @@ pub enum FileTreeEvent {
         new_path: PathBuf,
     },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    FileDeleted { path: PathBuf },
+    FileDeleted {
+        path: PathBuf,
+    },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    CDToDirectory { path: PathBuf },
+    CDToDirectory {
+        path: PathBuf,
+    },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    OpenDirectoryInNewTab { path: PathBuf },
+    OpenDirectoryInNewTab {
+        path: PathBuf,
+    },
 }
 
 impl Entity for FileTreeView {
@@ -3019,6 +3145,13 @@ impl View for FileTreeView {
 
     #[cfg(feature = "local_fs")]
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        if let Some(error) = self
+            .project_context_error
+            .clone()
+            .or_else(|| self.directory_loading_error(app))
+        {
+            return self.render_directory_recovery("Project folder unavailable", error, app);
+        }
         if matches!(self.enablement, CodingPanelEnablementState::Disabled) {
             return self.render_error_state(DISABLED_TEXT.to_string(), app);
         }
@@ -3052,6 +3185,29 @@ impl View for FileTreeView {
                 return self.render_error_state(WSL_TEXT.to_string(), app);
             }
 
+            return self.render_directory_recovery(
+                "No folder selected",
+                "Choose a project folder to browse its files.".to_owned(),
+                app,
+            );
+        }
+
+        let model = RepoMetadataModel::as_ref(app);
+        if self.displayed_directories.iter().all(|path| {
+            self.root_directories.get(path).is_some_and(|root| {
+                !root.is_remote()
+                    && root.items.len() <= 1
+                    && matches!(
+                        model.repository_state(
+                            &repo_metadata::RepositoryIdentifier::local(
+                                (**root.entry.root_directory()).clone()
+                            ),
+                            app,
+                        ),
+                        Some(IndexedRepoState::Pending)
+                    )
+            })
+        }) {
             return self.render_loading_state(app);
         }
 
@@ -3070,6 +3226,14 @@ impl TypedActionView for FileTreeView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
+            FileTreeAction::RetryProjectDirectory => {
+                #[cfg(feature = "local_fs")]
+                self.retry_project_directory(ctx);
+                ctx.emit(FileTreeEvent::RetryProjectDirectory);
+            }
+            FileTreeAction::LocateProjectDirectory => {
+                ctx.emit(FileTreeEvent::LocateProjectDirectory)
+            }
             FileTreeAction::ItemClicked { id } => {
                 ctx.focus_self();
                 self.select_and_execute_item_at_id(id, ctx);

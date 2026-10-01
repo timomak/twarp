@@ -71,9 +71,9 @@ use crate::{
 };
 
 use super::{
-    autotracking, ActionCallback, BlurContext, FocusContext, GlobalActionCallback, GlobalShortcut,
-    InvalidationCallback, Observation, PendingUnsubscribes, RefCounts, Subscription, TaskCallback,
-    TypedActionCallback, ViewType,
+    autotracking, window_bounds::CachedWindowBounds, ActionCallback, BlurContext, FocusContext,
+    GlobalActionCallback, GlobalShortcut, InvalidationCallback, Observation, PendingUnsubscribes,
+    RefCounts, Subscription, TaskCallback, TypedActionCallback, ViewType,
 };
 
 lazy_static! {
@@ -627,7 +627,7 @@ pub struct AppContext {
     window_invalidations: HashMap<WindowId, WindowInvalidation>,
     invalidation_callbacks: HashMap<WindowId, Box<InvalidationCallback>>,
     disabled_key_bindings_windows: HashSet<WindowId>,
-    window_bounds: HashMap<WindowId, Option<RectF>>,
+    window_bounds: HashMap<WindowId, CachedWindowBounds>,
     next_window_bounds_map: HashMap<WindowId, NextNewWindowsHasThisWindowsBoundsUponClose>,
 
     /// The bounds of the next window to open.  Typically this is set
@@ -859,11 +859,14 @@ impl AppContext {
     }
 
     pub fn window_bounds(&self, window_id: &WindowId) -> Option<RectF> {
-        *self.window_bounds.get(window_id)?
+        self.window_bounds.get(window_id)?.get()
     }
 
     pub fn update_window_bounds(&mut self, window_id: WindowId, bounds: RectF) {
-        self.window_bounds.insert(window_id, Some(bounds));
+        self.window_bounds
+            .entry(window_id)
+            .or_insert_with(|| CachedWindowBounds::new(None))
+            .update(bounds);
     }
 
     /// Moves the OS window to `bounds` and immediately updates the local cache.
@@ -873,11 +876,11 @@ impl AppContext {
     /// waiting for a move-event callback.
     pub fn set_and_cache_window_bounds(&mut self, window_id: WindowId, bounds: RectF) {
         self.windows().set_window_bounds(window_id, bounds);
-        self.window_bounds.insert(window_id, Some(bounds));
+        self.update_window_bounds(window_id, bounds);
     }
 
     fn matches_any_window_bounds(&self, r: RectF) -> bool {
-        self.window_bounds.values().any(|b| *b == Some(r))
+        self.window_bounds.values().any(|b| b.get() == Some(r))
     }
 
     /// Create a window showing a modal dialog native to the platform. The modal will synchronously
@@ -2348,7 +2351,8 @@ impl AppContext {
 
         // Make sure we store the window bounds before we create the root view,
         // in case it uses this value.
-        self.window_bounds.insert(window_id, window_bounds.bounds());
+        self.window_bounds
+            .insert(window_id, CachedWindowBounds::new(window_bounds.bounds()));
         self.next_window_bounds_map
             .insert(window_id, anchor_new_windows_from_closed_position);
 
@@ -2478,8 +2482,7 @@ impl AppContext {
             resize_callback: Box::new(move |window, ctx| {
                 let origin = window.origin();
                 let size = window.size();
-                ctx.window_bounds
-                    .insert(window_id, Some(RectF::new(origin, size)));
+                ctx.update_window_bounds(window_id, RectF::new(origin, size));
 
                 window.request_redraw();
 
@@ -2502,7 +2505,7 @@ impl AppContext {
                 ctx.dispatch_draw_frame_error_callback(window_id);
             }),
             move_callback: Box::new(move |bound, ctx| {
-                ctx.window_bounds.insert(window_id, Some(bound));
+                ctx.update_window_bounds(window_id, bound);
                 ctx.report_active_cursor_position_update();
             }),
             active_cursor_position_callback: Box::new(move |ctx| {
@@ -2594,7 +2597,7 @@ impl AppContext {
         ) {
             // Store the bounds of the window that was closed so that the next window
             // we reopen is positioned there.
-            self.next_window_bounds = *bounds;
+            self.next_window_bounds = bounds.get();
         }
         WindowManager::handle(self).update(self, |windowing_state, ctx| {
             windowing_state.remove_window(window_id, ctx);
@@ -2648,7 +2651,7 @@ impl AppContext {
             subscriptions,
             observations,
             view_to_window: view_to_window_backup,
-            bounds,
+            bounds: bounds.get(),
             fullscreen_state,
         });
 

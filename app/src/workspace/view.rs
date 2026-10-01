@@ -11,6 +11,7 @@ pub(crate) mod left_panel;
 mod left_panel_slide;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
+mod project_context;
 mod project_sidebar;
 pub(crate) mod right_panel;
 mod startup_directory;
@@ -1083,6 +1084,7 @@ pub struct Workspace {
     right_panel_slide: Option<left_panel_slide::PanelSlide>,
     right_panel_close_pending: bool,
     working_directories_model: ModelHandle<pane_group::WorkingDirectoriesModel>,
+    project_context: project_context::ProjectContextState,
     /// twarp 07: git status model for the active *Claude-only* tab's repo.
     /// Terminal tabs each own a `GitRepoStatusModel` (see `TerminalView`), which
     /// the top-right diff badge (`render_right_panel_button`) reads for its +N/-N
@@ -2826,7 +2828,8 @@ impl Workspace {
         // Folder-backed projects are an app-wide library. A project registered
         // in one window should appear in every other Projects sidebar without
         // changing that window's local selection, focus, or scroll state.
-        ctx.subscribe_to_model(&ProjectManagementModel::handle(ctx), |_me, _, _, ctx| {
+        ctx.subscribe_to_model(&ProjectManagementModel::handle(ctx), |me, _, _, ctx| {
+            me.sync_project_context(false, ctx);
             ctx.notify();
         });
 
@@ -3052,6 +3055,7 @@ impl Workspace {
             right_panel_slide: None,
             right_panel_close_pending: false,
             working_directories_model,
+            project_context: Default::default(),
             shown_staging_banner_count: 0,
 
             #[cfg(target_family = "wasm")]
@@ -3355,6 +3359,7 @@ impl Workspace {
                         self.right_tool_open,
                     );
 
+                self.project_context.restoring_tabs = true;
                 window_snapshot
                     .tabs
                     .iter()
@@ -3399,6 +3404,7 @@ impl Workspace {
                             );
                         }
                     });
+                self.project_context.restoring_tabs = false;
 
                 if self.tab_count() == 0 {
                     if self.should_trigger_get_started_onboarding(ctx) {
@@ -3420,6 +3426,7 @@ impl Workspace {
                 }
 
                 self.activate_tab_internal(active_tab_index, ctx);
+                self.sync_project_context(false, ctx);
                 self.check_and_trigger_onboarding(ctx);
                 self.maybe_auto_open_conversation_list(ctx);
             }
@@ -3558,6 +3565,7 @@ impl Workspace {
             left_panel.set_active_pane_group(active_pane_group, &working_directories_model, ctx);
             left_panel.set_project_files_visible(project_files_visible, ctx);
         });
+        self.sync_project_context(false, ctx);
     }
 
     fn initial_vertical_tabs_panel_open(
@@ -7168,36 +7176,11 @@ impl Workspace {
         );
     }
 
-    /// twarp 21a: opens the Pull Requests page (an [`AutomationPage`] variant,
-    /// reusing the automation pane shell). Before opening, seed the PR store
-    /// with the known project roots (live tabs + library, deduped) and default
-    /// the repo picker to the active tab's project — this also kicks off a
-    /// fresh fetch on every open.
+    /// Hydrate the window's PR page from its local project context.
     fn open_pull_requests_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        let mut projects: Vec<PathBuf> = Vec::new();
-        let mut push = |path: Option<PathBuf>| {
-            if let Some(path) = path {
-                if !projects.contains(&path) {
-                    projects.push(path);
-                }
-            }
-        };
-        let default = self
-            .tabs
-            .get(self.active_tab_index)
-            .and_then(|tab| tab.project_root.clone());
-        push(default.clone());
-        for tab in &self.tabs {
-            push(tab.project_root.clone());
-        }
-        for path in crate::projects::ProjectManagementModel::as_ref(ctx).project_paths_by_recency()
-        {
-            push(Some(path));
-        }
-        crate::pull_requests::PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
-            store.set_projects(projects, default, ctx);
-        });
+        self.sync_project_context(false, ctx);
         self.open_automation_pane(AutomationPage::PullRequests, ctx);
+        self.sync_project_context(false, ctx);
     }
 
     /// Open a file from the given session as a notebook pane.
@@ -7787,8 +7770,7 @@ impl Workspace {
             return;
         }
         ctx.notify();
-        let timer = twarpui::r#async::Timer::after(left_panel_slide::PANEL_SLIDE_TICK);
-        ctx.spawn(timer, |me, _, ctx| me.tick_left_panel_slide(ctx));
+        slide.schedule_tick(ctx, Self::tick_left_panel_slide);
     }
 
     /// Current visible fraction of the Code Review rail. The canonical open
@@ -7833,8 +7815,7 @@ impl Workspace {
             return;
         }
         ctx.notify();
-        let timer = twarpui::r#async::Timer::after(left_panel_slide::PANEL_SLIDE_TICK);
-        ctx.spawn(timer, |me, _, ctx| me.tick_right_panel_slide(ctx));
+        slide.schedule_tick(ctx, Self::tick_right_panel_slide);
     }
 
     /// Auto-opens the conversation list on first app start.
@@ -13076,6 +13057,7 @@ impl Workspace {
                 right_panel.resync_available_repos(&working_directories_model, ctx);
             });
         }
+        self.sync_project_context(false, ctx);
     }
 
     /// Opens the in-app network log pane as a right-split of the active pane
@@ -15131,6 +15113,7 @@ impl Workspace {
                 });
             }
         }
+        self.sync_project_context(false, ctx);
     }
 
     fn handle_twarp_drive_event(&mut self, event: &DrivePanelEvent, ctx: &mut ViewContext<Self>) {
@@ -19799,37 +19782,41 @@ impl Workspace {
 
     #[cfg(feature = "local_fs")]
     fn open_project_library_entry(&mut self, path: &Path, ctx: &mut ViewContext<Self>) {
-        let Some(project_root) = std::fs::canonicalize(path)
-            .ok()
-            .filter(|path| path.is_dir())
-            .filter(|path| std::fs::read_dir(path).is_ok())
-        else {
-            let window_id = ctx.window_id();
-            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                toast_stack.add_ephemeral_toast(
-                    DismissibleToast::error("That folder is unavailable or unreadable".to_owned()),
-                    window_id,
-                    ctx,
-                );
-            });
-            return;
-        };
-
-        // Model events and user actions can race. If this project became local
-        // after the row rendered, activate it instead of opening a duplicate.
-        if let Some(index) = self
-            .tabs
-            .iter()
-            .position(|tab| tab.project_root.as_ref() == Some(&project_root))
-        {
-            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
-                projects.upsert_project(project_root, ctx);
-            });
-            self.activate_tab(index, ctx);
-            return;
-        }
-
-        self.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
+        let project_root = path.to_path_buf();
+        let local = ProjectManagementModel::as_ref(ctx).resolve_directory(path);
+        ctx.spawn(
+            async move { std::fs::read_dir(&local).map(|_| ()) },
+            move |me, result, ctx| {
+                if let Err(error) = result {
+                    me.toast_stack.update(ctx, |toasts, ctx| {
+                        toasts.add_ephemeral_toast(
+                            DismissibleToast::error(format!(
+                                "Cannot open {}: {error}",
+                                project_root.display()
+                            ))
+                            .with_link(
+                                ToastLink::new("Locate folder".to_owned()).with_onclick_action(
+                                    WorkspaceAction::LocateProjectDirectoryAt(project_root),
+                                ),
+                            ),
+                            ctx,
+                        );
+                    });
+                    return;
+                }
+                // Resolve the live tab after the background check, preserving its
+                // original identity even when the folder has been replaced locally.
+                if let Some(index) = me
+                    .tabs
+                    .iter()
+                    .position(|tab| tab.project_root.as_ref() == Some(&project_root))
+                {
+                    me.activate_tab(index, ctx);
+                } else {
+                    me.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
+                }
+            },
+        );
     }
 
     /// twarp 26d: create a sidebar project for the sessions MCP
@@ -19871,7 +19858,10 @@ impl Workspace {
                         is_focused: true,
                         custom_vertical_tabs_title: None,
                         contents: LeafContents::Welcome {
-                            startup_directory: Some(project_root.clone()),
+                            startup_directory: Some(
+                                ProjectManagementModel::as_ref(ctx)
+                                    .resolve_directory(&project_root),
+                            ),
                         },
                     }))),
                     Arc::new(HashMap::new()),
@@ -19884,6 +19874,7 @@ impl Workspace {
                 }
             }
         }
+        self.sync_project_context(false, ctx);
         ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
     }
@@ -19936,7 +19927,11 @@ impl Workspace {
             .into_iter()
             .flatten()
             .map(|directory| directory.path);
-        project_sidebar::resolve_project_directory(tab.project_root.clone(), directories)
+        let assigned = tab
+            .project_root
+            .as_deref()
+            .map(|root| ProjectManagementModel::as_ref(ctx).resolve_directory(root));
+        project_sidebar::resolve_project_directory(assigned, directories)
     }
 
     fn new_project_chat(
@@ -20014,6 +20009,7 @@ impl Workspace {
         else {
             return;
         };
+        let cwd = ProjectManagementModel::as_ref(ctx).resolve_directory(&cwd);
         if !cwd.is_dir() || std::fs::read_dir(&cwd).is_err() {
             let window_id = ctx.window_id();
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -20639,6 +20635,10 @@ impl TypedActionView for Workspace {
                 self.open_automation_pane(AutomationPage::Plugins, ctx)
             }
             ShowPullRequests => self.open_pull_requests_pane(ctx),
+            RefreshPullRequests => self.sync_project_context(true, ctx),
+            RetryProjectDirectory => self.retry_project_directory(ctx),
+            LocateProjectDirectory => self.locate_project_directory(ctx),
+            LocateProjectDirectoryAt(path) => self.locate_project_directory_at(path.clone(), ctx),
             ReviewPrWithClaude { prompt, cwd } => {
                 self.open_pr_review_claude_tab(prompt.clone(), cwd.clone(), ctx)
             }
@@ -22394,19 +22394,11 @@ impl View for Workspace {
                     .finish()
             }
         };
-        // The project shell is itself the full-window chrome. Workspace views can
-        // be measured intrinsically by an ancestor before the final window pass;
-        // without an explicit finite boundary that unbounded height reaches the
-        // sidebar, right tool, and activity strip and produces NaN paint bounds.
+        // Bound intrinsic measuring passes by the current, zoom-adjusted
+        // viewport. Read its size during layout so cached chrome follows every
+        // resize instead of retaining render-time window dimensions.
         let panels = if use_project_shell {
-            if let Some(bounds) = app.window_bounds(&self.window_id) {
-                ConstrainedBox::new(panels)
-                    .with_width(bounds.width())
-                    .with_height(bounds.height())
-                    .finish()
-            } else {
-                panels
-            }
+            ConstrainedBox::new(panels).with_window_size().finish()
         } else {
             panels
         };

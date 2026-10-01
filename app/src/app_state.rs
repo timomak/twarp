@@ -1242,19 +1242,19 @@ pub struct AmbientAgentPaneSnapshot {
     pub task_id: Option<AmbientAgentTaskId>,
 }
 
-/// Snapshot of a Claude Code pane (twarp 07). twarp stores no transcript of its
-/// own — the only durable handle to a conversation is the `session_id` that
-/// `claude` writes its `.jsonl` under. On restore the pane is reopened with
-/// `claude --resume <session_id>` (lazily — history is read from the `.jsonl`,
-/// and the live process only respawns on the next message), so this carries the
-/// minimum needed to relocate that file: the id, plus the originating `cwd`
-/// (which both anchors the `~/.claude/projects/<cwd>` lookup and restores the
-/// pane's directory context). `session_id` is `None` for a pane whose first
-/// turn hasn't completed; such a pane is not persisted (see `is_persisted`).
+/// Snapshot of a Claude Code pane (twarp 07). The provider owns the transcript;
+/// twarp stores its session identity, original directory context, and optional
+/// exact transcript location. Pinning that location lets a relocated checkout
+/// resume the same history without moving provider files. The live process
+/// respawns lazily on the next message. `session_id` is `None` until history
+/// exists on disk; such a pane is not persisted (see `is_persisted`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClaudeCodePaneSnapshot {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+    /// Provider-owned transcript location, independent of checkout relocation.
+    /// None for old snapshots and providers whose history is addressed by ID.
+    pub history_path: Option<String>,
     pub provider: AgentProvider,
     /// twarp 26d: JSON-encoded [`crate::sessions_mcp::SpawnOrigin`] for panes
     /// created via the sessions MCP `create_chat` tool — the header

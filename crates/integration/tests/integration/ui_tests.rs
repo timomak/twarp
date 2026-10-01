@@ -145,6 +145,12 @@ integration_tests! {
     test_code_review_source_rail_opens_and_loads,
     #[cfg(target_os="macos")]
     test_project_sidebar_shell_smoke,
+    #[cfg(target_os="macos")]
+    test_rootless_session_pr_and_global_files_context,
+    #[cfg(target_os="macos")]
+    test_project_pr_context_is_independent_between_windows,
+    #[cfg(target_os="macos")]
+    test_restored_pr_requires_choice_for_multiple_projects,
     #[ignore = "Flaking on CI - KC looking into 3/31/26"]
     test_code_review_scroll_anchor_preserved_when_inserting_above,
     #[ignore = "Flaking on CI - KC looking into 3/31/26"]

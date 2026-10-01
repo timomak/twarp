@@ -281,6 +281,58 @@ impl RepoMetadataModel {
     }
 
     // ── Remote-specific operations ─────────────────────────────────
+
+    #[cfg(feature = "local_fs")]
+    pub fn request_index_lazy_loaded_path(
+        &self,
+        path: &StandardizedPath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.local.update(ctx, |local, ctx| {
+            local.request_index_lazy_loaded_path(path, ctx)
+        });
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn request_load_directory(
+        &self,
+        root: &StandardizedPath,
+        path: &StandardizedPath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.local.update(ctx, |local, ctx| {
+            local.request_load_directory(root, path, ctx)
+        });
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn directory_load_error(
+        &self,
+        root: &StandardizedPath,
+        path: &StandardizedPath,
+        app: &AppContext,
+    ) -> Option<String> {
+        self.local
+            .as_ref(app)
+            .directory_load_error(root, path)
+            .map(str::to_owned)
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn clear_directory_load_errors(
+        &self,
+        root: &StandardizedPath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.local
+            .update(ctx, |local, _| local.clear_directory_load_errors(root));
+    }
+
+    #[cfg(all(feature = "local_fs", any(test, feature = "test-util")))]
+    pub fn has_pending_explorer_loads(&self, app: &AppContext) -> bool {
+        self.local.as_ref(app).has_pending_explorer_loads()
+    }
+
     // These delegate to the remote sub-model and are called by the
     // RemoteServerManager event subscription in the app layer.
 

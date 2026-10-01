@@ -63,7 +63,7 @@ impl GlobalSearch {
         roots: Vec<PathBuf>,
         search_config: SearchConfig,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> Option<u32> {
         if let Some(handle) = self.search_handle.take() {
             log::info!("GlobalSearch: aborting previous search");
             handle.abort();
@@ -94,7 +94,7 @@ impl GlobalSearch {
                     search_id,
                     error: format!("Invalid regex: {err}"),
                 });
-                return;
+                return Some(search_id);
             }
         }
 
@@ -130,6 +130,7 @@ impl GlobalSearch {
         );
 
         self.search_handle = Some(handle);
+        Some(search_id)
     }
 
     #[allow(clippy::too_many_arguments)]
